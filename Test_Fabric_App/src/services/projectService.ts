@@ -49,6 +49,14 @@ export type ContractSplitResult = {
   existingProjectRefs: string[];
 };
 
+type ContractSplitContext = {
+  baseProjectRef: string;
+  siteGuid: string;
+  parentGuid: string;
+  rootGuid: string;
+  sourceProjectToClose: ProjectRecord | null;
+};
+
 type AuthenticatedUser = {
   id: string;
   email: string;
@@ -188,6 +196,13 @@ function assertValidProjectNumber(
   }
 }
 
+function getProjectCloseDate(project: ProjectRecord, today: Date): Date {
+  const projectEffectiveFrom = getUtcDateOnly(new Date(project.effective_from));
+  const yesterday = addUtcDays(today, -1);
+
+  return projectEffectiveFrom >= today ? today : yesterday;
+}
+
 function isUniqueProjectRefError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return /project_ref|unique|duplicate|conflict/i.test(message);
@@ -211,22 +226,27 @@ async function findProjectsForSite(siteGuid: string) {
     .execute();
 }
 
-async function findContractRefsForProject(projectRef: string) {
+async function findContractProjectsForProject(projectRef: string) {
   const projects = await getRayfinClient()
-    .data.master_project_register.select(["project_ref"] as const)
+    .data.master_project_register.select(PROJECT_FIELDS)
     .where({ project_ref: { startsWith: `${projectRef}-` } })
     .first(-1)
     .execute();
 
+  return projects
+    .filter(
+      (project) =>
+        parseContractProjectRef(project.project_ref)?.parentProjectRef ===
+        projectRef,
+    )
+    .sort((left, right) => left.project_ref.localeCompare(right.project_ref));
+}
+
+async function findContractRefsForProject(projectRef: string) {
+  const projects = await findContractProjectsForProject(projectRef);
+
   return Array.from(
-    new Set(
-      projects
-        .map((project) => project.project_ref)
-        .filter(
-          (ref) =>
-            parseContractProjectRef(ref)?.parentProjectRef === projectRef,
-        ),
-    ),
+    new Set(projects.map((project) => project.project_ref)),
   ).sort();
 }
 
@@ -338,6 +358,56 @@ export async function createProject(
   );
 }
 
+async function getContractSplitContext(
+  projectRef: string,
+): Promise<ContractSplitContext> {
+  const parsedContractRef = parseContractProjectRef(projectRef);
+  const baseProjectRef = parsedContractRef?.parentProjectRef ?? projectRef;
+
+  if (!parseSiteProjectRef(baseProjectRef)) {
+    throw new Error(
+      "Enter a site-level project reference like D012-01, or an existing contract reference like D012-01-01.",
+    );
+  }
+
+  const existingContractProjects =
+    await findContractProjectsForProject(baseProjectRef);
+
+  if (existingContractProjects.length > 0) {
+    const lineageProject =
+      existingContractProjects.find(isActiveProject) ??
+      existingContractProjects[0];
+
+    if (!lineageProject.parent_guid) {
+      throw new Error(
+        `Existing contract projects for ${baseProjectRef} do not have a parent GUID.`,
+      );
+    }
+
+    return {
+      baseProjectRef,
+      siteGuid: lineageProject.site_guid,
+      parentGuid: lineageProject.parent_guid,
+      rootGuid: lineageProject.root_guid,
+      sourceProjectToClose: null,
+    };
+  }
+
+  const sourceProject = await findActiveProjectByRef(baseProjectRef);
+
+  if (!sourceProject) {
+    throw new Error(`No active project found for ${baseProjectRef}.`);
+  }
+
+  return {
+    baseProjectRef,
+    siteGuid: sourceProject.site_guid,
+    parentGuid: sourceProject.guid,
+    rootGuid: sourceProject.root_guid,
+    sourceProjectToClose: sourceProject,
+  };
+}
+
 export async function splitForNewPlanningApplication(
   projectRef: string,
 ): Promise<PlanningSplitResult> {
@@ -364,7 +434,7 @@ export async function splitForNewPlanningApplication(
   }
 
   const today = getUtcDateOnly(new Date());
-  const yesterday = addUtcDays(today, -1);
+  const closeDate = getProjectCloseDate(sourceProject, today);
   const nextProjectNumber = await getNextAvailableSiteProjectNumber(
     site.guid,
     parsedRef.siteCode,
@@ -377,7 +447,7 @@ export async function splitForNewPlanningApplication(
 
   await data.master_project_register.update(
     { id: sourceProject.id },
-    { effective_to: yesterday },
+    { effective_to: closeDate },
   );
 
   const replacementProject = await createProjectRegisterRow({
@@ -415,12 +485,6 @@ export async function splitForContracts(
   projectRef: string,
   totalContractSplits: number,
 ): Promise<ContractSplitResult> {
-  if (!parseSiteProjectRef(projectRef)) {
-    throw new Error(
-      "Enter a site-level project reference, e.g. D012-01 or KK123-01. Contract refs cannot be split again.",
-    );
-  }
-
   if (
     !Number.isInteger(totalContractSplits) ||
     totalContractSplits < 2 ||
@@ -431,40 +495,43 @@ export async function splitForContracts(
 
   const user = getCurrentUser();
   const data = getRayfinClient().data;
-  const sourceProject = await findActiveProjectByRef(projectRef);
-
-  if (!sourceProject) {
-    throw new Error(`No active project found for ${projectRef}.`);
-  }
-
-  const existingContractRefs = await findContractRefsForProject(projectRef);
+  const splitContext = await getContractSplitContext(projectRef);
+  const existingContractRefs = await findContractRefsForProject(
+    splitContext.baseProjectRef,
+  );
   const refsToCreate = Array.from({ length: totalContractSplits }, (_, index) =>
-    formatContractProjectRef(projectRef, index + 1),
+    formatContractProjectRef(splitContext.baseProjectRef, index + 1),
   ).filter((ref) => !existingContractRefs.includes(ref));
   const today = getUtcDateOnly(new Date());
-  const yesterday = addUtcDays(today, -1);
 
-  await data.master_project_register.update(
-    { id: sourceProject.id },
-    { effective_to: yesterday },
-  );
+  if (splitContext.sourceProjectToClose) {
+    await data.master_project_register.update(
+      { id: splitContext.sourceProjectToClose.id },
+      {
+        effective_to: getProjectCloseDate(
+          splitContext.sourceProjectToClose,
+          today,
+        ),
+      },
+    );
+  }
 
   const createdProjects: ProjectRecord[] = [];
 
   for (const contractProjectRef of refsToCreate) {
     const project = await createProjectRegisterRow({
       projectRef: contractProjectRef,
-      siteGuid: sourceProject.site_guid,
+      siteGuid: splitContext.siteGuid,
       effectiveFrom: today,
       user,
-      parentGuid: sourceProject.guid,
-      rootGuid: sourceProject.root_guid,
+      parentGuid: splitContext.parentGuid,
+      rootGuid: splitContext.rootGuid,
     });
     createdProjects.push(project);
   }
 
   return {
-    sourceProjectRef: projectRef,
+    sourceProjectRef: splitContext.baseProjectRef,
     createdProjectRefs: createdProjects.map((project) => project.project_ref),
     existingProjectRefs: existingContractRefs,
   };

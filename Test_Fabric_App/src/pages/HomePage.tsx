@@ -8,7 +8,7 @@ import {
 } from "@/services/projectService";
 
 const SITE_CODE_PATTERN = /^[A-Z]{1,2}\d{3}$/;
-const PROJECT_REF_PATTERN = /^[A-Z]{1,2}\d{3}-\d{2}$/;
+const SPLIT_PROJECT_REF_PATTERN = /^[A-Z]{1,2}\d{3}-\d{2}(?:-\d{2})?$/;
 
 type ActiveTab = "create" | "split";
 type SplitType = "planning" | "contracts";
@@ -37,7 +37,8 @@ export function HomePage() {
     [projectRef],
   );
   const siteCodeIsValid = SITE_CODE_PATTERN.test(normalisedSiteCode);
-  const projectRefIsValid = PROJECT_REF_PATTERN.test(normalisedProjectRef);
+  const projectRefIsValid =
+    SPLIT_PROJECT_REF_PATTERN.test(normalisedProjectRef);
   const contractSplitCount = Number(totalContractSplits);
 
   useEffect(() => {
@@ -84,7 +85,9 @@ export function HomePage() {
     setSuccessMessage(null);
 
     if (!projectRefIsValid) {
-      setError("Enter a project reference like D012-01 or KK123-01.");
+      setError(
+        "Enter a project reference like D012-01, KK123-01, or an existing contract ref like D012-01-01.",
+      );
       return;
     }
 
@@ -286,8 +289,9 @@ export function HomePage() {
                   aria-invalid={error ? true : undefined}
                 />
                 <p id="project-ref-help" className="mt-2 text-sm text-gray-500">
-                  Use a project ref such as D012-01. Contract refs such as
-                  D012-01-01 cannot be split again.
+                  Use a site-level project ref such as D012-01. For contract
+                  splits, you can also enter an existing contract ref such as
+                  D012-01-01 to add further cumulative splits.
                 </p>
               </div>
 
