@@ -1,5 +1,5 @@
 id: test-fabric-app
-name: Test_Fabric_App
+name: Project Register
 version: 1.0.0
 services:
   auth:

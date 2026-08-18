@@ -1,37 +1,40 @@
-# Blank App
+# Project Register
 
-Bare-bones Fabric-authenticated React + Vite app.
-Sign-in, routing, and a placeholder home page — with no data layer to delete before you start your own project.
+Fabric Rayfin app for creating projects and managing project splits.
+
+## Features
+
+- Create a new project from a site code such as `D012` or `KK123`
+- Reuse existing site records and advance `next_project_number`
+- Split active projects for:
+  - new planning applications
+  - contract splits
+- Track project lineage with `guid`, `parent_guid`, `root_guid`, and effective dates
 
 ## Getting started
 
 ```bash
-# Deploy app to Fabric and start the local dev server
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173) to view the app.
+Open [http://localhost:5173](http://localhost:5173) to view the app locally.
+
+## Deploy
+
+```bash
+npm run rayfin:up
+```
 
 ## Project structure
 
 ```text
 ├── rayfin/
-│   └── rayfin.yml          # Fabric service configuration (auth + static hosting)
+│   ├── data/                # Rayfin data model entities
+│   └── rayfin.yml           # Fabric service configuration
 ├── src/
-│   ├── main.tsx            # Entry point + Rayfin client bootstrap
-│   ├── App.tsx             # Routes and auth gate
-│   ├── hooks/
-│   │   └── AuthContext.tsx # React context wrapping the auth helpers
-│   ├── components/
-│   │   └── AuthPage.tsx    # Sign-in UI
-│   ├── pages/
-│   │   └── HomePage.tsx    # Post-auth landing page
-│   └── services/
-│       ├── IAuthService.ts        # Auth service contract + AuthUser type
-│       ├── MockAuthService.ts     # Local-dev impl (email/password)
-│       ├── RayfinAuthService.ts   # Production impl (Fabric brokered auth)
-│       ├── rayfinClient.ts        # Typed Rayfin client singleton
-│       └── bootstrap.ts           # Reads env, picks the right auth service
+│   ├── pages/HomePage.tsx   # Create + split project UI
+│   ├── services/projectService.ts
+│   └── ...
 └── package.json
 ```
 
@@ -41,7 +44,7 @@ Open [http://localhost:5173](http://localhost:5173) to view the app.
 |---------|-------------|
 | `npm run dev` | Deploy app to Fabric and start local dev server |
 | `npm run build` | Production build |
-| `npm run build:fabric` | Build for Fabric deployment (entrypoint for `rayfin up staticapp deploy`) |
+| `npm run build:fabric` | Build for Fabric deployment |
 | `npm run lint` | Lint with ESLint |
 | `npm run test` | Run unit tests with Vitest |
-| `npm run rayfin:up` | Deploy app to Fabric (no local dev server) |
+| `npm run rayfin:up` | Deploy app to Fabric |
