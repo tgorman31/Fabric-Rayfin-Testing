@@ -42,7 +42,6 @@ type ReportingSectionGroup = {
 
 type SectionTheme = {
   headerClass: string;
-  badgeClass: string;
   barClass: string;
   railClass: string;
   textClass: string;
@@ -59,42 +58,42 @@ const majorTabs: Array<{ key: MajorTab; label: string; enabled: boolean }> = [
 const sectionThemes: Record<string, SectionTheme> = {
   "land-activation": {
     headerClass: "bg-fuchsia-50 text-fuchsia-800 border-fuchsia-200",
-    badgeClass: "bg-fuchsia-100 text-fuchsia-800",
+
     barClass: "from-fuchsia-500 to-fuchsia-700",
     railClass: "bg-fuchsia-100/70",
     textClass: "text-fuchsia-700",
   },
   "site-pipeline": {
     headerClass: "bg-emerald-50 text-emerald-800 border-emerald-200",
-    badgeClass: "bg-emerald-100 text-emerald-800",
+
     barClass: "from-emerald-400 to-emerald-600",
     railClass: "bg-emerald-100/70",
     textClass: "text-emerald-700",
   },
   planning: {
     headerClass: "bg-amber-50 text-amber-800 border-amber-200",
-    badgeClass: "bg-amber-100 text-amber-800",
+
     barClass: "from-amber-300 to-orange-500",
     railClass: "bg-amber-100/70",
     textClass: "text-amber-700",
   },
   ddtc: {
     headerClass: "bg-cyan-50 text-cyan-800 border-cyan-200",
-    badgeClass: "bg-cyan-100 text-cyan-800",
+
     barClass: "from-cyan-300 to-cyan-500",
     railClass: "bg-cyan-100/70",
     textClass: "text-cyan-700",
   },
   construction: {
     headerClass: "bg-pink-50 text-pink-800 border-pink-200",
-    badgeClass: "bg-pink-100 text-pink-800",
+
     barClass: "from-pink-300 to-pink-500",
     railClass: "bg-pink-100/70",
     textClass: "text-pink-700",
   },
 };
 
-const REPORTING_LEFT_GRID = "260px_72px_156px_156px_96px";
+const REPORTING_LEFT_GRID = "260px 72px 156px 156px 96px";
 const REPORTING_LEFT_WIDTH = 740;
 const TIMELINE_MIN_WIDTH = 980;
 
@@ -102,7 +101,7 @@ function getSectionTheme(sectionCode: string): SectionTheme {
   return (
     sectionThemes[sectionCode] ?? {
       headerClass: "bg-slate-100 text-slate-800 border-slate-200",
-      badgeClass: "bg-slate-100 text-slate-700",
+
       barClass: "from-slate-400 to-slate-600",
       railClass: "bg-slate-100",
       textClass: "text-slate-700",
@@ -1572,14 +1571,7 @@ export function ProjectIndexPage() {
                           <div
                             className={`border-b border-r px-4 py-3 text-sm font-semibold ${theme.headerClass}`}
                           >
-                            <div className="flex items-center gap-3">
-                              <span
-                                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${theme.badgeClass}`}
-                              >
-                                Section
-                              </span>
-                              {section.sectionLabel}
-                            </div>
+                            {section.sectionLabel}
                           </div>
                           <div
                             className={`border-b px-0 py-0 ${theme.headerClass}`}

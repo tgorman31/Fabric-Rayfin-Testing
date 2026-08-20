@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { useAuth } from "@/hooks/AuthContext";
 import {
@@ -444,7 +445,25 @@ export function HomePage() {
             Project Register
           </h1>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          <Link
+            to="/apps"
+            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-100 hover:text-gray-900"
+            aria-label="Back to app launcher"
+          >
+            <span
+              className="grid grid-cols-3 gap-0.5 text-current"
+              aria-hidden="true"
+            >
+              {Array.from({ length: 9 }, (_, index) => (
+                <span
+                  key={index}
+                  className="h-1.5 w-1.5 rounded-full bg-current"
+                />
+              ))}
+            </span>
+            Apps
+          </Link>
           {user && (
             <span className="hidden text-sm text-gray-500 sm:inline">
               Signed in as {user.email}
