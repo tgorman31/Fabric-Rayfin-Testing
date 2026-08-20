@@ -140,12 +140,17 @@ Confirmed direction:
 ### Shared shell
 
 Confirmed direction:
+- the app should open users directly into **Project Index** after sign-in
 - top-level app navigation should feel closer to a **Microsoft 365-style app launcher/menu** with `Project Register` and `Project Index` as distinct options
+- users should be able to switch destinations through that launcher/menu
+- if an unauthorized user manually requests the `Project Register` route, they should land on the launcher/home experience **without** the Register option
 - inside `Project Index`, use a **hybrid navigation model**:
   - major area navigation at the top level
   - sub-tabs within sections such as `Tenure`
 - v1 save behavior should be **auto-save field by field**
-- if the same project is open in multiple sessions, v1 should show a **currently being edited by X** style indicator rather than hard locking
+- v1 should show a subtle **Saving... / Saved** status in the page header
+- invalid values should be blocked from saving immediately with an inline validation error
+- if the same project is open in multiple sessions, v1 should show a simple **last editor / last updated** style indicator rather than hard locking
 
 Common header context is expected to include:
 - `Project Ref`
@@ -225,10 +230,9 @@ Confirmed rules:
 - `Team` is a dropdown
 - person selection should preferably use **directory / Entra-backed search**
 - if directory resolution is unavailable or incomplete, users should be able to **fall back to free text**
+- free-text people entries should be allowed but clearly marked as **unverified**
+- the same person should appear **only once per project** in v1
 - in-app historical retention is not required for now; downstream snapshotting/warehousing will handle history
-
-Remaining open items:
-- whether the same person can appear multiple times in different roles
 
 ## 1.4 Facilities
 
@@ -256,6 +260,8 @@ Confirmed direction:
   - `P` = Project team
 - allowed `RAG` values are `R`, `A`, `G`
 - timeline/gantt is required in the first release
+- the preferred v1 layout is a **structured editable grid first**, with the timeline shown **beside** the grid where space allows
+- the first delivered build should include the **full Reporting Programme section structure**, even if some rows start as placeholders
 - standard programme templates are a good `v2` idea, not required for v1
 
 Remaining open items:

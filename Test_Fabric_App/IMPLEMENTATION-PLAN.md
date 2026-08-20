@@ -91,7 +91,9 @@ Likely initial roles:
 - `project_index_editor`
 
 ### UI behavior
+- the app should open directly into `Project Index` after sign-in
 - unauthorized users do not see the `Project Register` nav item
+- if an unauthorized user manually hits the Register route, redirect them to the launcher/home experience without the Register option
 - all signed-in users can access `Project Index` in v1
 - `Admin` should be implemented as a **global app admin area**, not a project-level tab
 - global admin maintenance should still be permission controlled
@@ -193,11 +195,15 @@ Likely initial roles:
   - `staff_username` or `staff_identifier`
   - `directory_object_id` nullable
   - `entry_mode` (`directory`, `free_text`)
+  - `is_unverified`
   - `staff_role_code`
   - `team_code`
   - `is_responsible_manager`
   - `last_reviewed_at`
   - audit columns
+
+Recommended v1 rule:
+- one person per project only, enforced through application validation and ideally a uniqueness rule once identity semantics are finalized
 
 #### 3. Reporting Programme
 - `project_reporting_programme_item`
@@ -344,7 +350,10 @@ Implement as repeating editable grid with:
 - use planner-like layout discipline rather than spreadsheet visuals
 - preserve scannability with grouped cards/sections
 - v1 should use **field-by-field auto-save** rather than explicit section save buttons where the platform allows it
+- show subtle `Saving...` / `Saved` feedback in the page header
+- invalid values should be blocked immediately with inline validation
 - prefer person selection via directory / Entra-backed search with free-text fallback
+- visually mark free-text fallback entries as unverified
 
 ### Dependencies
 - reference/admin tables
@@ -379,8 +388,10 @@ Implement as repeating editable grid with:
 6. Add a gantt/timeline visualization.
 
 ### Recommended v1 interaction model
-- grid editing for dates and reporting values
+- structured grid editing first, with the timeline beside the grid where space allows
 - field-by-field auto-save
+- header-level `Saving...` / `Saved` status
+- inline validation that blocks invalid saves immediately
 - gantt bars render from stored dates
 - no drag-to-edit requirement in v1 unless the underlying component is reliable and low-risk
 
@@ -396,6 +407,7 @@ Implement as repeating editable grid with:
 
 ### Exit criteria
 - Reporting Programme supports edit + persist for reporting fields
+- the full agreed Reporting Programme section structure is present, even if some rows are placeholders in the first slice
 - derived fields are rendered correctly
 - gantt/timeline is visible for v1
 

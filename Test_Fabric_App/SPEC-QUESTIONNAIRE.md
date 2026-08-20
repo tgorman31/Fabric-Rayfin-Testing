@@ -40,10 +40,11 @@ This file now acts as a compact decision register and outstanding-question list 
 - Long term, Register access should likely use **Entra group** membership
 - Initial implementation should use a **role table** in app data
 - Unauthorized users should **not see** `Project Register`
+- If an unauthorized user manually hits the Register route, they should land on the launcher/home experience without the Register option
 - For now, all signed-in users can edit Project Index
 - No tab-level read-only split is required for now
 - Audit/update history is wanted for edit tables
-- if a project is open in multiple sessions, v1 should show a **currently being edited by X** indicator rather than lock the record
+- if a project is open in multiple sessions, v1 should show a simple **last editor / last updated** indicator rather than lock the record
 
 ## 3. First implementation scope
 - Desired target is the **full Project Index scope**
@@ -64,6 +65,8 @@ This file now acts as a compact decision register and outstanding-question list 
 - `Sub-Stage`: editable dropdown
 - `Project Status`: editable dropdown, manually maintained
 - `Reporting Status`: editable dropdown
+- field-by-field auto-save should show subtle `Saving...` / `Saved` feedback in the page header
+- invalid values should be blocked from save immediately with inline validation
 
 ### Base Info
 - `Site Code`, `Planning Code`, `Contract Code`: derived from active project ref
@@ -84,6 +87,8 @@ This file now acts as a compact decision register and outstanding-question list 
 - `Team`: dropdown
 - prefer search against directory / Entra
 - if that is unavailable or incomplete, fall back to free text
+- free-text entries are allowed but should be marked as unverified
+- the same person should appear only once per project in v1
 - history handled downstream rather than in-app
 
 ### Facilities
@@ -102,6 +107,8 @@ This file now acts as a compact decision register and outstanding-question list 
   - `P` = Project team
 - allowed `RAG`: `R`, `A`, `G`
 - timeline/gantt required in first release
+- preferred v1 layout is structured grid first with timeline beside
+- first delivered slice should include the full section structure, even if some rows are placeholders
 - standard templates are a `v2` idea
 
 ## 6. Target Programme
@@ -266,9 +273,11 @@ This file now acts as a compact decision register and outstanding-question list 
 - do not literally mimic yellow Excel cells
 - use standard web UI indicators for editability
 - timeline/gantt should be modern planner-style
+- app should open directly into `Project Index` after sign-in
 - top-level navigation should feel closer to a **Microsoft 365-style app launcher/menu**
 - inside `Project Index`, start with a **hybrid** navigation model
 - v1 save behavior should be **auto-save field by field**
+- save feedback should be subtle header-level `Saving...` / `Saved`
 - primary brand colors:
   - Dark Green: `#025437`
   - Middle Green: `#006838`
@@ -287,7 +296,6 @@ This file now acts as a compact decision register and outstanding-question list 
 ## Project Information
 - exact parsing rule for planning/contract codes
 - are `Site Name` and `Public Name` both mandatory?
-- can the same person appear multiple times in different roles?
 
 ## Reporting Programme
 - are `Gateway`, `Reporting Stage`, and `Sub-Stage` edited here or elsewhere?
@@ -317,4 +325,3 @@ This file now acts as a compact decision register and outstanding-question list 
 - future board-report export format priority
 - print/export visual fidelity expectations
 - v1 gantt drag/drop vs visual-first behavior
-- exact preferred shape of the Microsoft 365-style launcher/menu in this app context
