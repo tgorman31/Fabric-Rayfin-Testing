@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { useAuth } from "@/hooks/AuthContext";
@@ -34,6 +34,19 @@ type TimelineMonth = {
   start: Date;
 };
 
+type TimelineYearGroup = {
+  key: string;
+  label: string;
+  span: number;
+};
+
+type TimelineDragState = {
+  itemId: string;
+  edge: "start" | "end";
+  rowLeft: number;
+  rowWidth: number;
+};
+
 type ReportingSectionGroup = {
   sectionCode: string;
   sectionLabel: string;
@@ -45,6 +58,25 @@ type SectionTheme = {
   barClass: string;
   railClass: string;
   textClass: string;
+};
+
+type MapViewport = {
+  centerLat: number;
+  centerLng: number;
+  zoom: number;
+};
+
+type MapBounds = {
+  minLat: number;
+  maxLat: number;
+  minLng: number;
+  maxLng: number;
+};
+
+type MapProjectPoint = ProjectListItem & {
+  countyLabel: string;
+  lat: number;
+  lng: number;
 };
 
 const majorTabs: Array<{ key: MajorTab; label: string; enabled: boolean }> = [
@@ -96,6 +128,47 @@ const sectionThemes: Record<string, SectionTheme> = {
 const REPORTING_LEFT_GRID = "260px 72px 156px 156px 96px";
 const REPORTING_LEFT_WIDTH = 740;
 const TIMELINE_MIN_WIDTH = 980;
+const MAP_MIN_LAT = 51.2;
+const MAP_MAX_LAT = 55.6;
+const MAP_MIN_LNG = -10.9;
+const MAP_MAX_LNG = -5.1;
+const DEFAULT_MAP_VIEWPORT: MapViewport = {
+  centerLat: 53.35,
+  centerLng: -8.0,
+  zoom: 1,
+};
+
+const countyAnchors: Record<
+  string,
+  { label: string; lat: number; lng: number }
+> = {
+  C: { label: "Cork", lat: 51.8985, lng: -8.4756 },
+  CE: { label: "Clare", lat: 52.847, lng: -8.986 },
+  CN: { label: "Cavan", lat: 53.99, lng: -7.36 },
+  CW: { label: "Carlow", lat: 52.84, lng: -6.93 },
+  D: { label: "Dublin", lat: 53.3498, lng: -6.2603 },
+  DL: { label: "Donegal", lat: 54.654, lng: -8.11 },
+  G: { label: "Galway", lat: 53.2707, lng: -9.0568 },
+  KE: { label: "Kildare", lat: 53.16, lng: -6.91 },
+  KK: { label: "Kilkenny", lat: 52.654, lng: -7.2448 },
+  KY: { label: "Kerry", lat: 52.1545, lng: -9.5669 },
+  L: { label: "Limerick", lat: 52.6638, lng: -8.6267 },
+  LD: { label: "Longford", lat: 53.72, lng: -7.8 },
+  LH: { label: "Louth", lat: 53.95, lng: -6.54 },
+  LM: { label: "Leitrim", lat: 54.12, lng: -8.0 },
+  LS: { label: "Laois", lat: 53.03, lng: -7.3 },
+  MH: { label: "Meath", lat: 53.61, lng: -6.66 },
+  MN: { label: "Monaghan", lat: 54.25, lng: -6.97 },
+  MO: { label: "Mayo", lat: 53.85, lng: -9.3 },
+  OY: { label: "Offaly", lat: 53.27, lng: -7.49 },
+  RN: { label: "Roscommon", lat: 53.63, lng: -8.19 },
+  SO: { label: "Sligo", lat: 54.27, lng: -8.48 },
+  T: { label: "Tipperary", lat: 52.47, lng: -8.16 },
+  W: { label: "Waterford", lat: 52.2593, lng: -7.1101 },
+  WD: { label: "Wicklow", lat: 53.0, lng: -6.35 },
+  WH: { label: "Westmeath", lat: 53.53, lng: -7.34 },
+  WX: { label: "Wexford", lat: 52.3369, lng: -6.4633 },
+};
 
 function getSectionTheme(sectionCode: string): SectionTheme {
   return (
@@ -220,6 +293,126 @@ function getTimelinePlacement(
   return { start, span: end - start + 1 };
 }
 
+function buildTimelineYears(months: TimelineMonth[]): TimelineYearGroup[] {
+  const groups: TimelineYearGroup[] = [];
+
+  for (const month of months) {
+    const year = String(month.start.getFullYear());
+    const current = groups[groups.length - 1];
+    if (current?.label === year) {
+      current.span += 1;
+      continue;
+    }
+
+    groups.push({ key: year, label: year, span: 1 });
+  }
+
+  return groups;
+}
+
+function endOfMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0);
+}
+
+function formatDateInput(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function extractCountyPrefix(siteCode: string): string {
+  return siteCode.match(/^[A-Z]+/)?.[0] ?? "";
+}
+
+function hashText(value: string): number {
+  let hash = 0;
+  for (const character of value) {
+    hash = (hash * 31 + character.charCodeAt(0)) % 100000;
+  }
+  return hash;
+}
+
+function getCountyAnchor(siteCode: string) {
+  const prefix = extractCountyPrefix(siteCode);
+  return (
+    countyAnchors[prefix] ??
+    countyAnchors[prefix.slice(0, 1)] ?? {
+      label: "Ireland",
+      lat: 53.35,
+      lng: -8.0,
+    }
+  );
+}
+
+function buildProjectMapPoint(project: ProjectListItem): MapProjectPoint {
+  const anchor = getCountyAnchor(project.siteCode);
+  const hash = hashText(project.siteCode);
+  const latOffset = ((hash % 17) - 8) * 0.035;
+  const lngOffset = ((Math.floor(hash / 17) % 17) - 8) * 0.05;
+
+  return {
+    ...project,
+    countyLabel: anchor.label,
+    lat: clamp(anchor.lat + latOffset, MAP_MIN_LAT, MAP_MAX_LAT),
+    lng: clamp(anchor.lng + lngOffset, MAP_MIN_LNG, MAP_MAX_LNG),
+  };
+}
+
+function getMapBounds(viewport: MapViewport): MapBounds {
+  const latSpan = (MAP_MAX_LAT - MAP_MIN_LAT) / viewport.zoom;
+  const lngSpan = (MAP_MAX_LNG - MAP_MIN_LNG) / viewport.zoom;
+
+  return {
+    minLat: viewport.centerLat - latSpan / 2,
+    maxLat: viewport.centerLat + latSpan / 2,
+    minLng: viewport.centerLng - lngSpan / 2,
+    maxLng: viewport.centerLng + lngSpan / 2,
+  };
+}
+
+function clampViewport(viewport: MapViewport): MapViewport {
+  const latSpan = (MAP_MAX_LAT - MAP_MIN_LAT) / viewport.zoom;
+  const lngSpan = (MAP_MAX_LNG - MAP_MIN_LNG) / viewport.zoom;
+
+  return {
+    zoom: clamp(viewport.zoom, 1, 5),
+    centerLat: clamp(
+      viewport.centerLat,
+      MAP_MIN_LAT + latSpan / 2,
+      MAP_MAX_LAT - latSpan / 2,
+    ),
+    centerLng: clamp(
+      viewport.centerLng,
+      MAP_MIN_LNG + lngSpan / 2,
+      MAP_MAX_LNG - lngSpan / 2,
+    ),
+  };
+}
+
+function isPointInBounds(
+  point: Pick<MapProjectPoint, "lat" | "lng">,
+  bounds: MapBounds,
+): boolean {
+  return (
+    point.lat >= bounds.minLat &&
+    point.lat <= bounds.maxLat &&
+    point.lng >= bounds.minLng &&
+    point.lng <= bounds.maxLng
+  );
+}
+
+function getMapPointPosition(
+  point: Pick<MapProjectPoint, "lat" | "lng">,
+  bounds: MapBounds,
+) {
+  return {
+    left: ((point.lng - bounds.minLng) / (bounds.maxLng - bounds.minLng)) * 100,
+    top: ((bounds.maxLat - point.lat) / (bounds.maxLat - bounds.minLat)) * 100,
+  };
+}
+
 function groupReportingSections(
   items: ReportingProgrammeItem[],
 ): ReportingSectionGroup[] {
@@ -322,43 +515,75 @@ function InlineSelect({
 }
 
 function TimelineHeader({ months }: { months: TimelineMonth[] }) {
+  const yearGroups = buildTimelineYears(months);
+
   return (
-    <div
-      className="grid h-full"
-      style={{
-        gridTemplateColumns: `repeat(${months.length}, minmax(72px, 1fr))`,
-      }}
-    >
-      {months.map((month, index) => (
-        <div
-          key={month.key}
-          className={`flex items-center justify-center border-l border-slate-200 px-2 py-4 text-center text-xs font-semibold uppercase tracking-[0.18em] whitespace-nowrap text-slate-500 ${
-            index % 2 === 0 ? "bg-slate-50" : "bg-white"
-          }`}
-        >
-          {month.label}
-        </div>
-      ))}
+    <div className="border-l border-slate-200">
+      <div
+        className="grid border-b border-slate-200"
+        style={{
+          gridTemplateColumns: `repeat(${months.length}, minmax(72px, 1fr))`,
+        }}
+      >
+        {yearGroups.map((yearGroup) => (
+          <div
+            key={yearGroup.key}
+            className="flex h-9 items-center justify-center border-l border-slate-200 bg-slate-100 px-2 text-[11px] font-semibold uppercase tracking-[0.22em] whitespace-nowrap text-slate-500"
+            style={{
+              gridColumn: `span ${yearGroup.span} / span ${yearGroup.span}`,
+            }}
+          >
+            {yearGroup.label}
+          </div>
+        ))}
+      </div>
+      <div
+        className="grid"
+        style={{
+          gridTemplateColumns: `repeat(${months.length}, minmax(72px, 1fr))`,
+        }}
+      >
+        {months.map((month, index) => (
+          <div
+            key={month.key}
+            className={`flex h-11 items-center justify-center border-l border-slate-200 px-2 text-center text-xs font-semibold uppercase tracking-[0.18em] whitespace-nowrap text-slate-500 ${
+              index % 2 === 0 ? "bg-slate-50" : "bg-white"
+            }`}
+          >
+            {month.label}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
 function TimelineRow({
+  item,
   months,
   placement,
   theme,
+  onResizeStart,
 }: {
+  item: ReportingProgrammeItem;
   months: TimelineMonth[];
   placement: { start: number; span: number } | null;
   theme: SectionTheme;
+  onResizeStart: (
+    event: React.PointerEvent<HTMLButtonElement>,
+    item: ReportingProgrammeItem,
+    edge: "start" | "end",
+    rowElement: HTMLDivElement | null,
+  ) => void;
 }) {
+  const rowRef = useRef<HTMLDivElement | null>(null);
   const left = placement
     ? `${((placement.start - 1) / months.length) * 100}%`
     : "0%";
   const width = placement ? `${(placement.span / months.length) * 100}%` : "0%";
 
   return (
-    <div className="relative h-17 overflow-hidden">
+    <div ref={rowRef} className="relative h-21 overflow-hidden">
       <div
         className="grid h-full"
         style={{
@@ -373,17 +598,177 @@ function TimelineRow({
         ))}
       </div>
       {placement ? (
-        <div className="pointer-events-none absolute inset-0 px-2">
+        <div className="absolute inset-0 px-2">
           <div
-            className={`absolute top-1/2 h-10 -translate-y-1/2 rounded-full ${theme.railClass}`}
+            className={`absolute top-1/2 h-11 -translate-y-1/2 rounded-full ${theme.railClass}`}
             style={{ left, width }}
           >
             <div
-              className={`absolute left-1.5 right-1.5 top-1/2 h-6 -translate-y-1/2 rounded-full bg-linear-to-r ${theme.barClass} shadow-sm`}
+              className={`absolute inset-x-1.5 top-1/2 h-7 -translate-y-1/2 rounded-full bg-linear-to-r ${theme.barClass} shadow-sm`}
             />
+            {item.isEditable ? (
+              <>
+                <button
+                  type="button"
+                  onPointerDown={(event) =>
+                    onResizeStart(event, item, "start", rowRef.current)
+                  }
+                  className="absolute left-1 top-1/2 h-7 w-3 -translate-y-1/2 cursor-ew-resize rounded-full border border-white/80 bg-white/90 shadow-sm"
+                  aria-label={`Adjust start date for ${item.rowLabel}`}
+                />
+                <button
+                  type="button"
+                  onPointerDown={(event) =>
+                    onResizeStart(event, item, "end", rowRef.current)
+                  }
+                  className="absolute right-1 top-1/2 h-7 w-3 -translate-y-1/2 cursor-ew-resize rounded-full border border-white/80 bg-white/90 shadow-sm"
+                  aria-label={`Adjust end date for ${item.rowLabel}`}
+                />
+              </>
+            ) : null}
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function ProjectLocationMap({
+  points,
+  viewport,
+  selectedProjectGuid,
+  onViewportChange,
+  onOpenProject,
+}: {
+  points: MapProjectPoint[];
+  viewport: MapViewport;
+  selectedProjectGuid: string | null;
+  onViewportChange: (viewport: MapViewport) => void;
+  onOpenProject: (projectGuid: string) => void;
+}) {
+  const bounds = useMemo(() => getMapBounds(viewport), [viewport]);
+  const visiblePoints = useMemo(
+    () => points.filter((point) => isPointInBounds(point, bounds)),
+    [bounds, points],
+  );
+
+  function focusViewportFromInteraction(
+    clientX: number,
+    clientY: number,
+    container: HTMLDivElement,
+    nextZoom: number,
+  ) {
+    const rect = container.getBoundingClientRect();
+    const x = clamp((clientX - rect.left) / rect.width, 0, 1);
+    const y = clamp((clientY - rect.top) / rect.height, 0, 1);
+    const focusLng = bounds.minLng + x * (bounds.maxLng - bounds.minLng);
+    const focusLat = bounds.maxLat - y * (bounds.maxLat - bounds.minLat);
+    const latSpan = (MAP_MAX_LAT - MAP_MIN_LAT) / nextZoom;
+    const lngSpan = (MAP_MAX_LNG - MAP_MIN_LNG) / nextZoom;
+
+    onViewportChange(
+      clampViewport({
+        centerLat: focusLat + (y - 0.5) * latSpan,
+        centerLng: focusLng - (x - 0.5) * lngSpan,
+        zoom: nextZoom,
+      }),
+    );
+  }
+
+  return (
+    <div className="rounded-4xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-lg font-semibold text-slate-950">Project map</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            Placeholder county locations based on the site-code prefix. Zooming
+            filters the list to projects inside the current view.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => onViewportChange(DEFAULT_MAP_VIEWPORT)}
+          className="rounded-full border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+        >
+          Reset view
+        </button>
+      </div>
+
+      <div
+        className="relative h-140 overflow-hidden rounded-4xl border border-slate-200 bg-linear-to-br from-slate-100 via-emerald-50 to-cyan-50"
+        onWheel={(event) => {
+          event.preventDefault();
+          const delta = event.deltaY < 0 ? 0.4 : -0.4;
+          const nextZoom = clamp(viewport.zoom + delta, 1, 5);
+          focusViewportFromInteraction(
+            event.clientX,
+            event.clientY,
+            event.currentTarget,
+            nextZoom,
+          );
+        }}
+        onClick={(event) => {
+          focusViewportFromInteraction(
+            event.clientX,
+            event.clientY,
+            event.currentTarget,
+            viewport.zoom,
+          );
+        }}
+      >
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(2,84,55,0.08),transparent_45%),linear-gradient(to_right,rgba(148,163,184,0.18)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.18)_1px,transparent_1px)] bg-size-[auto,20%,20%]" />
+        <div className="absolute left-[14%] top-[10%] h-[78%] w-[70%] rounded-[45%_55%_42%_58%/38%_35%_65%_62%] border border-white/80 bg-white/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]" />
+
+        {visiblePoints.map((point) => {
+          const position = getMapPointPosition(point, bounds);
+          const isSelected = point.projectGuid === selectedProjectGuid;
+
+          return (
+            <button
+              key={point.projectGuid}
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onViewportChange(
+                  clampViewport({
+                    ...viewport,
+                    centerLat: point.lat,
+                    centerLng: point.lng,
+                  }),
+                );
+              }}
+              onDoubleClick={(event) => {
+                event.stopPropagation();
+                onOpenProject(point.projectGuid);
+              }}
+              className={`group absolute -translate-x-1/2 -translate-y-1/2 ${isSelected ? "z-20" : "z-10"}`}
+              style={{ left: `${position.left}%`, top: `${position.top}%` }}
+              title={`${point.projectRef} · ${point.projectName || point.siteCode}`}
+            >
+              <span
+                className={`block h-4 w-4 rounded-full border-2 border-white shadow-md transition ${
+                  isSelected
+                    ? "bg-[#025437]"
+                    : "bg-[#8fb73e] group-hover:bg-[#006838]"
+                }`}
+              />
+              <span className="pointer-events-none absolute left-1/2 top-full mt-2 hidden -translate-x-1/2 rounded-full bg-slate-950/90 px-3 py-1 text-xs font-medium whitespace-nowrap text-white group-hover:block">
+                {point.projectRef}
+              </span>
+            </button>
+          );
+        })}
+
+        <div className="absolute left-4 top-4 rounded-2xl bg-white/90 px-3 py-2 text-xs text-slate-600 shadow-sm backdrop-blur">
+          Zoom {viewport.zoom.toFixed(1)}×
+          <div className="mt-1 text-[11px] text-slate-500">
+            Click to re-centre · wheel to zoom · double-click a marker to open
+          </div>
+        </div>
+        <div className="absolute bottom-4 right-4 rounded-2xl bg-white/90 px-3 py-2 text-xs text-slate-600 shadow-sm backdrop-blur">
+          {visiblePoints.length} projects in view
+        </div>
+      </div>
     </div>
   );
 }
@@ -405,6 +790,11 @@ export function ProjectIndexPage() {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [validation, setValidation] = useState<ValidationState>({});
+  const [mapViewport, setMapViewport] =
+    useState<MapViewport>(DEFAULT_MAP_VIEWPORT);
+  const [timelineDragState, setTimelineDragState] =
+    useState<TimelineDragState | null>(null);
+  const workspaceRef = useRef<ProjectIndexWorkspace | null>(null);
 
   const selectedProjectGuid = routeProjectGuid ?? null;
   const options = useMemo(() => getProjectIndexOptions(), []);
@@ -489,11 +879,43 @@ export function ProjectIndexPage() {
     return () => window.clearTimeout(timeoutId);
   }, [saveState]);
 
+  useEffect(() => {
+    workspaceRef.current = workspace;
+  }, [workspace]);
+
   const selectedProject = useMemo(
     () =>
       projects.find((project) => project.projectGuid === selectedProjectGuid) ??
       null,
     [projects, selectedProjectGuid],
+  );
+
+  const projectMapPoints = useMemo(
+    () => projects.map(buildProjectMapPoint),
+    [projects],
+  );
+
+  const visibleMapBounds = useMemo(
+    () => getMapBounds(mapViewport),
+    [mapViewport],
+  );
+
+  const visibleProjectGuids = useMemo(
+    () =>
+      new Set(
+        projectMapPoints
+          .filter((point) => isPointInBounds(point, visibleMapBounds))
+          .map((point) => point.projectGuid),
+      ),
+    [projectMapPoints, visibleMapBounds],
+  );
+
+  const visibleProjects = useMemo(
+    () =>
+      projects.filter((project) =>
+        visibleProjectGuids.has(project.projectGuid),
+      ),
+    [projects, visibleProjectGuids],
   );
 
   const reportingSections = useMemo(
@@ -506,8 +928,129 @@ export function ProjectIndexPage() {
     [workspace?.reportingProgramme],
   );
 
+  useEffect(() => {
+    if (!timelineDragState) return;
+
+    const dragState = timelineDragState;
+
+    function updateDraggedDate(clientX: number) {
+      const monthIndex = clamp(
+        Math.floor(
+          ((clientX - dragState.rowLeft) / dragState.rowWidth) *
+            timelineMonths.length,
+        ),
+        0,
+        Math.max(0, timelineMonths.length - 1),
+      );
+      const targetMonth = timelineMonths[monthIndex];
+      if (!targetMonth) return;
+
+      setWorkspace((current) => {
+        if (!current) return current;
+
+        return {
+          ...current,
+          reportingProgramme: current.reportingProgramme.map((item) => {
+            if (item.id !== dragState.itemId) return item;
+
+            const startDate = item.startDate || item.endDate;
+            const endDate = item.endDate || item.startDate;
+            const nextStart = formatDateInput(startOfMonth(targetMonth.start));
+            const nextEnd = formatDateInput(endOfMonth(targetMonth.start));
+
+            if (dragState.edge === "start") {
+              const safeEnd =
+                endDate && nextStart > endDate ? nextStart : endDate;
+              return { ...item, startDate: nextStart, endDate: safeEnd };
+            }
+
+            const safeStart =
+              startDate && nextEnd < startDate ? nextEnd : startDate;
+            return { ...item, startDate: safeStart, endDate: nextEnd };
+          }),
+        };
+      });
+    }
+
+    function handlePointerMove(event: PointerEvent) {
+      event.preventDefault();
+      updateDraggedDate(event.clientX);
+    }
+
+    function handlePointerUp() {
+      const currentItem = workspaceRef.current?.reportingProgramme.find(
+        (item) => item.id === dragState.itemId,
+      );
+
+      if (currentItem) {
+        setSaveState("saving");
+        void updateReportingProgrammeItem(dragState.itemId, {
+          startDate: currentItem.startDate,
+          endDate: currentItem.endDate,
+        })
+          .then(() => {
+            setWorkspace((current) =>
+              current
+                ? {
+                    ...current,
+                    summary: {
+                      ...current.summary,
+                      lastEditedBy: user?.email ?? current.summary.lastEditedBy,
+                      lastUpdatedAt: new Intl.DateTimeFormat("en-GB", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      }).format(new Date()),
+                    },
+                  }
+                : current,
+            );
+            setSaveState("saved");
+          })
+          .catch((err) => {
+            setSaveState("error");
+            setError(
+              err instanceof Error
+                ? err.message
+                : "Unable to save reporting item.",
+            );
+          });
+      }
+
+      setTimelineDragState(null);
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [timelineDragState, timelineMonths, user?.email]);
+
   function openProject(projectGuid: string) {
     navigate(`/project-index/${projectGuid}`);
+  }
+
+  function beginTimelineResize(
+    event: React.PointerEvent<HTMLButtonElement>,
+    item: ReportingProgrammeItem,
+    edge: "start" | "end",
+    rowElement: HTMLDivElement | null,
+  ) {
+    if (!item.isEditable || !rowElement || timelineMonths.length === 0) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const rect = rowElement.getBoundingClientRect();
+    setTimelineDragState({
+      itemId: item.id,
+      edge,
+      rowLeft: rect.left,
+      rowWidth: rect.width,
+    });
   }
 
   async function saveSummaryField(
@@ -827,7 +1370,7 @@ export function ProjectIndexPage() {
                       htmlFor="project-search"
                       className="block text-sm font-medium text-slate-700"
                     >
-                      Search by project ref or site code
+                      Search by project ref, site code, or project name
                     </label>
                     <input
                       id="project-search"
@@ -836,7 +1379,7 @@ export function ProjectIndexPage() {
                       onChange={(event) =>
                         setSearchText(event.target.value.toUpperCase())
                       }
-                      placeholder="D012-01 or D012"
+                      placeholder="D012-01, D012, or Ballymun Phase 2"
                       className="mt-2 block w-full rounded-3xl border border-slate-300 bg-white px-5 py-3.5 text-sm outline-none transition focus:border-[#006838] focus:ring-4 focus:ring-[#8fb73e]/20"
                     />
                   </div>
@@ -864,100 +1407,118 @@ export function ProjectIndexPage() {
                 No projects match the current search.
               </div>
             ) : (
-              <div className="overflow-hidden rounded-4xl border border-slate-200 bg-white shadow-sm">
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead className="bg-slate-50">
-                      <tr className="text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        <th className="px-5 py-4">Project Ref</th>
-                        <th className="px-5 py-4">Site Code</th>
-                        <th className="px-5 py-4">Gateway</th>
-                        <th className="px-5 py-4">Reporting Stage</th>
-                        <th className="px-5 py-4">Project Status</th>
-                        <th className="px-5 py-4">Reporting Status</th>
-                        <th className="px-5 py-4">Responsible Manager</th>
-                        <th className="px-5 py-4">Last Updated</th>
-                        <th className="px-5 py-4 text-right">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {projects.map((project) => {
-                        const canOpenCurrent =
-                          !project.isActive &&
-                          project.currentProjectGuid !== project.projectGuid;
+              <div className="grid gap-6 2xl:grid-cols-[minmax(0,1.45fr)_minmax(420px,1fr)]">
+                <div className="overflow-hidden rounded-4xl border border-slate-200 bg-white shadow-sm">
+                  <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4 text-sm text-slate-600">
+                    <span>
+                      Showing {visibleProjects.length} of {projects.length}{" "}
+                      projects
+                    </span>
+                    <span className="text-xs uppercase tracking-[0.18em] text-slate-400">
+                      Map view filter
+                    </span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-50">
+                        <tr className="text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          <th className="px-5 py-4">Project Ref</th>
+                          <th className="px-5 py-4">Site Code</th>
+                          <th className="px-5 py-4">Project Name</th>
+                          <th className="px-5 py-4">Gateway</th>
+                          <th className="px-5 py-4">Reporting Stage</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {visibleProjects.map((project) => {
+                          const canOpenCurrent =
+                            !project.isActive &&
+                            project.currentProjectGuid !== project.projectGuid;
 
-                        return (
-                          <tr
-                            key={project.projectGuid}
-                            className="hover:bg-[#f7fbf8]"
-                          >
-                            <td className="px-5 py-4">
-                              <div className="flex items-center gap-3">
-                                <span className="font-semibold text-slate-950">
-                                  {project.projectRef}
-                                </span>
-                                <span
-                                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                                    project.isActive
-                                      ? "bg-emerald-50 text-emerald-700"
-                                      : "bg-slate-100 text-slate-700"
-                                  }`}
-                                >
-                                  {project.isActive ? "Active" : "Historical"}
-                                </span>
-                              </div>
-                            </td>
-                            <td className="px-5 py-4 text-slate-600">
-                              {project.siteCode}
-                            </td>
-                            <td className="px-5 py-4 text-slate-600">
-                              {project.gateway}
-                            </td>
-                            <td className="px-5 py-4 text-slate-600">
-                              {project.reportingStage}
-                            </td>
-                            <td className="px-5 py-4 text-slate-900">
-                              {project.projectStatus}
-                            </td>
-                            <td className="px-5 py-4 text-slate-900">
-                              {project.reportingStatus}
-                            </td>
-                            <td className="px-5 py-4 text-slate-900">
-                              {project.responsibleManager}
-                            </td>
-                            <td className="px-5 py-4 text-slate-900">
-                              {project.lastUpdated}
-                            </td>
-                            <td className="px-5 py-4 text-right">
-                              <div className="flex items-center justify-end gap-3">
-                                {canOpenCurrent ? (
+                          return (
+                            <tr
+                              key={project.projectGuid}
+                              className="cursor-pointer hover:bg-[#f7fbf8]"
+                              onClick={() => openProject(project.projectGuid)}
+                            >
+                              <td className="px-5 py-4 align-top">
+                                <div className="flex items-center gap-3">
+                                  <span className="font-semibold text-slate-950">
+                                    {project.projectRef}
+                                  </span>
+                                  <span
+                                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                                      project.isActive
+                                        ? "bg-emerald-50 text-emerald-700"
+                                        : "bg-slate-100 text-slate-700"
+                                    }`}
+                                  >
+                                    {project.isActive ? "Active" : "Historical"}
+                                  </span>
+                                </div>
+                                <div className="mt-2 flex flex-wrap items-center gap-3 text-xs font-semibold text-[#025437]">
                                   <button
                                     type="button"
-                                    onClick={() =>
-                                      openProject(project.currentProjectGuid)
-                                    }
-                                    className="text-sm font-semibold text-[#025437] transition hover:text-[#01462e]"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      openProject(project.projectGuid);
+                                    }}
+                                    className="transition hover:text-[#01462e]"
                                   >
-                                    Open current
+                                    Open
                                   </button>
-                                ) : null}
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    openProject(project.projectGuid)
-                                  }
-                                  className="inline-flex items-center gap-2 rounded-full bg-[#025437] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#01462e]"
-                                >
-                                  Open <span aria-hidden="true">›</span>
-                                </button>
-                              </div>
+                                  {canOpenCurrent ? (
+                                    <button
+                                      type="button"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        openProject(project.currentProjectGuid);
+                                      }}
+                                      className="transition hover:text-[#01462e]"
+                                    >
+                                      Open current
+                                    </button>
+                                  ) : null}
+                                </div>
+                              </td>
+                              <td className="px-5 py-4 text-slate-600">
+                                {project.siteCode}
+                              </td>
+                              <td className="px-5 py-4 text-slate-900">
+                                {project.projectName || "—"}
+                              </td>
+                              <td className="px-5 py-4 text-slate-600">
+                                {project.gateway}
+                              </td>
+                              <td className="px-5 py-4 text-slate-600">
+                                {project.reportingStage}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {visibleProjects.length === 0 ? (
+                          <tr>
+                            <td
+                              colSpan={5}
+                              className="px-5 py-12 text-center text-sm text-slate-500"
+                            >
+                              No projects are in the current map view. Reset or
+                              zoom out to widen the list.
                             </td>
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                        ) : null}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
+
+                <ProjectLocationMap
+                  points={projectMapPoints}
+                  viewport={mapViewport}
+                  selectedProjectGuid={selectedProjectGuid}
+                  onViewportChange={setMapViewport}
+                  onOpenProject={openProject}
+                />
               </div>
             )}
           </section>
@@ -1541,108 +2102,98 @@ export function ProjectIndexPage() {
                   </div>
                 </div>
 
-                <div className="overflow-x-auto rounded-4xl border border-slate-200">
-                  <div
-                    className="grid"
-                    style={{
-                      gridTemplateColumns: `${REPORTING_LEFT_WIDTH}px minmax(${TIMELINE_MIN_WIDTH}px, 1fr)`,
-                      minWidth: REPORTING_LEFT_WIDTH + TIMELINE_MIN_WIDTH,
-                    }}
-                  >
+                <div className="overflow-hidden rounded-4xl border border-slate-200">
+                  <div className="flex">
                     <div
-                      className="grid border-b border-r border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500"
-                      style={{ gridTemplateColumns: REPORTING_LEFT_GRID }}
+                      className="shrink-0 border-r border-slate-200 bg-white"
+                      style={{ width: REPORTING_LEFT_WIDTH }}
                     >
-                      <div className="px-4 py-4">Item</div>
-                      <div className="px-3 py-4">Lvl</div>
-                      <div className="px-3 py-4">Start</div>
-                      <div className="px-3 py-4">End</div>
-                      <div className="px-3 py-4">Duration</div>
-                    </div>
-                    <div className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      <TimelineHeader months={timelineMonths} />
-                    </div>
+                      <div
+                        className="grid border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500"
+                        style={{
+                          gridTemplateColumns: REPORTING_LEFT_GRID,
+                          height: 80,
+                        }}
+                      >
+                        <div className="flex items-center px-4">Item</div>
+                        <div className="flex items-center px-3">Lvl</div>
+                        <div className="flex items-center px-3">Start</div>
+                        <div className="flex items-center px-3">End</div>
+                        <div className="flex items-center px-3">Duration</div>
+                      </div>
 
-                    {reportingSections.map((section) => {
-                      const theme = getSectionTheme(section.sectionCode);
+                      {reportingSections.map((section) => {
+                        const theme = getSectionTheme(section.sectionCode);
 
-                      return (
-                        <Fragment key={section.sectionCode}>
-                          <div
-                            className={`border-b border-r px-4 py-3 text-sm font-semibold ${theme.headerClass}`}
-                          >
-                            {section.sectionLabel}
-                          </div>
-                          <div
-                            className={`border-b px-0 py-0 ${theme.headerClass}`}
-                          />
+                        return (
+                          <Fragment key={section.sectionCode}>
+                            <div
+                              className={`flex h-12 items-center border-b border-slate-200 px-4 text-sm font-semibold ${theme.headerClass}`}
+                            >
+                              {section.sectionLabel}
+                            </div>
 
-                          {section.items.map((item) => {
-                            const placement = getTimelinePlacement(
-                              item,
-                              timelineMonths,
-                            );
-
-                            return (
-                              <Fragment key={item.id}>
+                            {section.items.map((item) => (
+                              <div
+                                key={item.id}
+                                className="grid border-b border-slate-200 bg-white hover:bg-slate-50/70"
+                                style={{
+                                  gridTemplateColumns: REPORTING_LEFT_GRID,
+                                  minHeight: 84,
+                                }}
+                              >
                                 <div
-                                  className="grid border-b border-r border-slate-200 bg-white hover:bg-slate-50/70"
+                                  className={`flex items-center px-4 py-3 ${theme.textClass}`}
                                   style={{
-                                    gridTemplateColumns: REPORTING_LEFT_GRID,
+                                    boxShadow: `inset 4px 0 0 currentColor`,
                                   }}
                                 >
-                                  <div
-                                    className={`px-4 py-3 ${theme.textClass}`}
-                                    style={{
-                                      boxShadow: `inset 4px 0 0 currentColor`,
-                                    }}
-                                  >
-                                    <div className="text-sm font-medium text-current">
-                                      {item.rowLabel}
-                                    </div>
+                                  <div className="text-sm font-medium text-current">
+                                    {item.rowLabel}
                                   </div>
-                                  <div className="px-3 py-3 text-sm text-slate-600">
-                                    {item.levelCode}
-                                  </div>
-                                  <div className="px-3 py-2">
-                                    <input
-                                      type="date"
-                                      disabled={!item.isEditable}
-                                      value={item.startDate}
-                                      onChange={(event) =>
-                                        setWorkspace((current) =>
-                                          current
-                                            ? {
-                                                ...current,
-                                                reportingProgramme:
-                                                  current.reportingProgramme.map(
-                                                    (row) =>
-                                                      row.id === item.id
-                                                        ? {
-                                                            ...row,
-                                                            startDate:
-                                                              event.target
-                                                                .value,
-                                                          }
-                                                        : row,
-                                                  ),
-                                              }
-                                            : current,
-                                        )
-                                      }
-                                      onBlur={(event) =>
-                                        void handleReportingSave(item.id, {
-                                          startDate: event.target.value,
-                                        })
-                                      }
-                                      className={`min-w-0 w-full rounded-2xl border px-3 py-2 text-sm outline-none transition ${
-                                        item.isEditable
-                                          ? "border-slate-300 bg-white focus:border-[#006838] focus:ring-4 focus:ring-[#8fb73e]/20"
-                                          : "border-slate-200 bg-slate-50 text-slate-400"
-                                      }`}
-                                    />
-                                  </div>
-                                  <div className="px-3 py-2">
+                                </div>
+                                <div className="flex items-center px-3 text-sm text-slate-600">
+                                  {item.levelCode}
+                                </div>
+                                <div className="flex items-center px-3 py-2">
+                                  <input
+                                    type="date"
+                                    disabled={!item.isEditable}
+                                    value={item.startDate}
+                                    onChange={(event) =>
+                                      setWorkspace((current) =>
+                                        current
+                                          ? {
+                                              ...current,
+                                              reportingProgramme:
+                                                current.reportingProgramme.map(
+                                                  (row) =>
+                                                    row.id === item.id
+                                                      ? {
+                                                          ...row,
+                                                          startDate:
+                                                            event.target.value,
+                                                        }
+                                                      : row,
+                                                ),
+                                            }
+                                          : current,
+                                      )
+                                    }
+                                    onBlur={(event) =>
+                                      void handleReportingSave(item.id, {
+                                        startDate: event.target.value,
+                                      })
+                                    }
+                                    className={`min-w-0 w-full rounded-2xl border px-3 py-2 text-sm outline-none transition ${
+                                      item.isEditable
+                                        ? "border-slate-300 bg-white focus:border-[#006838] focus:ring-4 focus:ring-[#8fb73e]/20"
+                                        : "border-slate-200 bg-slate-50 text-slate-400"
+                                    }`}
+                                  />
+                                </div>
+                                <div className="flex items-center px-3 py-2">
+                                  <div className="w-full">
                                     <input
                                       type="date"
                                       disabled={!item.isEditable}
@@ -1680,28 +2231,62 @@ export function ProjectIndexPage() {
                                       }`}
                                     />
                                     {validation[`reporting-${item.id}`] ? (
-                                      <p className="mt-2 text-xs text-red-600">
+                                      <p className="mt-1 text-[11px] text-red-600">
                                         {validation[`reporting-${item.id}`]}
                                       </p>
                                     ) : null}
                                   </div>
-                                  <div className="px-3 py-3 text-sm text-slate-600">
-                                    {getDurationLabel(item)}
+                                </div>
+                                <div className="flex items-center px-3 text-sm text-slate-600">
+                                  {getDurationLabel(item)}
+                                </div>
+                              </div>
+                            ))}
+                          </Fragment>
+                        );
+                      })}
+                    </div>
+
+                    <div className="min-w-0 flex-1 overflow-x-auto bg-white">
+                      <div style={{ minWidth: TIMELINE_MIN_WIDTH }}>
+                        <div className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          <TimelineHeader months={timelineMonths} />
+                        </div>
+
+                        {reportingSections.map((section) => {
+                          const theme = getSectionTheme(section.sectionCode);
+
+                          return (
+                            <Fragment key={section.sectionCode}>
+                              <div
+                                className={`h-12 border-b border-slate-200 ${theme.headerClass}`}
+                              />
+                              {section.items.map((item) => {
+                                const placement = getTimelinePlacement(
+                                  item,
+                                  timelineMonths,
+                                );
+
+                                return (
+                                  <div
+                                    key={item.id}
+                                    className="border-b border-slate-200 bg-white hover:bg-slate-50/70"
+                                  >
+                                    <TimelineRow
+                                      item={item}
+                                      months={timelineMonths}
+                                      placement={placement}
+                                      theme={theme}
+                                      onResizeStart={beginTimelineResize}
+                                    />
                                   </div>
-                                </div>
-                                <div className="border-b border-slate-200 bg-white hover:bg-slate-50/70">
-                                  <TimelineRow
-                                    months={timelineMonths}
-                                    placement={placement}
-                                    theme={theme}
-                                  />
-                                </div>
-                              </Fragment>
-                            );
-                          })}
-                        </Fragment>
-                      );
-                    })}
+                                );
+                              })}
+                            </Fragment>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </section>

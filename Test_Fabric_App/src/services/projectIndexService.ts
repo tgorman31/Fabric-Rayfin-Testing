@@ -274,6 +274,7 @@ export type ProjectListItem = {
   projectGuid: string;
   projectRef: string;
   siteCode: string;
+  projectName: string;
   gateway: string;
   reportingStage: string;
   projectStatus: string;
@@ -707,11 +708,13 @@ export async function listProjectIndexProjects(input: {
   return filtered
     .filter((project) => {
       const siteCode = sites.get(project.site_guid)?.site_code ?? "";
+      const summary = summaryMap.get(project.guid) ?? null;
       const query = input.searchText.trim().toUpperCase();
       return (
         !query ||
         siteCode.includes(query) ||
-        project.project_ref.includes(query)
+        project.project_ref.includes(query) ||
+        (summary?.project_name ?? "").toUpperCase().includes(query)
       );
     })
     .map((project) => {
@@ -724,6 +727,7 @@ export async function listProjectIndexProjects(input: {
         siteCode:
           sites.get(project.site_guid)?.site_code ??
           parseProjectRef(project.project_ref).siteCode,
+        projectName: summary?.project_name?.trim() || "",
         gateway: summary?.gateway_code ?? "—",
         reportingStage: summary?.reporting_stage_code ?? "—",
         projectStatus:
