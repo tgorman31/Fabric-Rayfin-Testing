@@ -85,6 +85,14 @@ function App() {
           }
         />
         <Route
+          path="/project-index/:projectGuid"
+          element={
+            <AuthGuard requireAuth={true}>
+              <ProjectIndexPage />
+            </AuthGuard>
+          }
+        />
+        <Route
           path="/project-register"
           element={
             <AuthGuard requireAuth={true}>
