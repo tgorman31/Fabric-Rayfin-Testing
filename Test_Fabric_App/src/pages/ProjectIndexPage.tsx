@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { useAuth } from "@/hooks/AuthContext";
@@ -40,6 +40,14 @@ type ReportingSectionGroup = {
   items: ReportingProgrammeItem[];
 };
 
+type SectionTheme = {
+  headerClass: string;
+  badgeClass: string;
+  barClass: string;
+  railClass: string;
+  textClass: string;
+};
+
 const majorTabs: Array<{ key: MajorTab; label: string; enabled: boolean }> = [
   { key: "project-information", label: "Project Information", enabled: true },
   { key: "reporting-programme", label: "Reporting Programme", enabled: true },
@@ -47,6 +55,60 @@ const majorTabs: Array<{ key: MajorTab; label: string; enabled: boolean }> = [
   { key: "tenure", label: "Tenure", enabled: false },
   { key: "board-report", label: "Board Report", enabled: false },
 ];
+
+const sectionThemes: Record<string, SectionTheme> = {
+  "land-activation": {
+    headerClass: "bg-fuchsia-50 text-fuchsia-800 border-fuchsia-200",
+    badgeClass: "bg-fuchsia-100 text-fuchsia-800",
+    barClass: "from-fuchsia-500 to-fuchsia-700",
+    railClass: "bg-fuchsia-100/70",
+    textClass: "text-fuchsia-700",
+  },
+  "site-pipeline": {
+    headerClass: "bg-emerald-50 text-emerald-800 border-emerald-200",
+    badgeClass: "bg-emerald-100 text-emerald-800",
+    barClass: "from-emerald-400 to-emerald-600",
+    railClass: "bg-emerald-100/70",
+    textClass: "text-emerald-700",
+  },
+  planning: {
+    headerClass: "bg-amber-50 text-amber-800 border-amber-200",
+    badgeClass: "bg-amber-100 text-amber-800",
+    barClass: "from-amber-300 to-orange-500",
+    railClass: "bg-amber-100/70",
+    textClass: "text-amber-700",
+  },
+  ddtc: {
+    headerClass: "bg-cyan-50 text-cyan-800 border-cyan-200",
+    badgeClass: "bg-cyan-100 text-cyan-800",
+    barClass: "from-cyan-300 to-cyan-500",
+    railClass: "bg-cyan-100/70",
+    textClass: "text-cyan-700",
+  },
+  construction: {
+    headerClass: "bg-pink-50 text-pink-800 border-pink-200",
+    badgeClass: "bg-pink-100 text-pink-800",
+    barClass: "from-pink-300 to-pink-500",
+    railClass: "bg-pink-100/70",
+    textClass: "text-pink-700",
+  },
+};
+
+const REPORTING_LEFT_GRID = "260px_72px_156px_156px_96px";
+const REPORTING_LEFT_WIDTH = 740;
+const TIMELINE_MIN_WIDTH = 980;
+
+function getSectionTheme(sectionCode: string): SectionTheme {
+  return (
+    sectionThemes[sectionCode] ?? {
+      headerClass: "bg-slate-100 text-slate-800 border-slate-200",
+      badgeClass: "bg-slate-100 text-slate-700",
+      barClass: "from-slate-400 to-slate-600",
+      railClass: "bg-slate-100",
+      textClass: "text-slate-700",
+    }
+  );
+}
 
 function statusText(saveState: SaveState) {
   switch (saveState) {
@@ -95,9 +157,7 @@ function dateFromInput(value: string): Date | null {
 }
 
 function formatMonthLabel(date: Date): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    month: "short",
-  }).format(date);
+  return new Intl.DateTimeFormat("en-GB", { month: "short" }).format(date);
 }
 
 function getDurationLabel(item: ReportingProgrammeItem): string {
@@ -121,14 +181,9 @@ function buildTimelineMonths(items: ReportingProgrammeItem[]): TimelineMonth[] {
     .filter(Boolean)
     .map((value) => startOfMonth(new Date(`${value as string}T00:00:00`)));
 
-  const base =
-    dates.length > 0
-      ? dates.sort((a, b) => a.getTime() - b.getTime())[0]
-      : startOfMonth(new Date());
-  const last =
-    dates.length > 0
-      ? dates.sort((a, b) => a.getTime() - b.getTime())[dates.length - 1]
-      : addMonths(base, 7);
+  const sorted = [...dates].sort((a, b) => a.getTime() - b.getTime());
+  const base = sorted[0] ?? startOfMonth(new Date());
+  const last = sorted[sorted.length - 1] ?? addMonths(base, 7);
   const start = addMonths(base, -1);
   const span = Math.max(8, monthDiff(start, addMonths(last, 1)) + 1);
 
@@ -163,10 +218,7 @@ function getTimelinePlacement(
   const start = Math.max(1, Math.min(timelineMonths.length, unclampedStart));
   const end = Math.max(start, Math.min(timelineMonths.length, unclampedEnd));
 
-  return {
-    start,
-    span: end - start + 1,
-  };
+  return { start, span: end - start + 1 };
 }
 
 function groupReportingSections(
@@ -267,6 +319,73 @@ function InlineSelect({
         </option>
       ))}
     </select>
+  );
+}
+
+function TimelineHeader({ months }: { months: TimelineMonth[] }) {
+  return (
+    <div
+      className="grid h-full"
+      style={{
+        gridTemplateColumns: `repeat(${months.length}, minmax(72px, 1fr))`,
+      }}
+    >
+      {months.map((month, index) => (
+        <div
+          key={month.key}
+          className={`flex items-center justify-center border-l border-slate-200 px-2 py-4 text-center text-xs font-semibold uppercase tracking-[0.18em] whitespace-nowrap text-slate-500 ${
+            index % 2 === 0 ? "bg-slate-50" : "bg-white"
+          }`}
+        >
+          {month.label}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TimelineRow({
+  months,
+  placement,
+  theme,
+}: {
+  months: TimelineMonth[];
+  placement: { start: number; span: number } | null;
+  theme: SectionTheme;
+}) {
+  const left = placement
+    ? `${((placement.start - 1) / months.length) * 100}%`
+    : "0%";
+  const width = placement ? `${(placement.span / months.length) * 100}%` : "0%";
+
+  return (
+    <div className="relative h-17 overflow-hidden">
+      <div
+        className="grid h-full"
+        style={{
+          gridTemplateColumns: `repeat(${months.length}, minmax(72px, 1fr))`,
+        }}
+      >
+        {months.map((month, index) => (
+          <div
+            key={month.key}
+            className={`border-l border-slate-200 ${index % 2 === 0 ? "bg-slate-50/80" : "bg-white"}`}
+          />
+        ))}
+      </div>
+      {placement ? (
+        <div className="pointer-events-none absolute inset-0 px-2">
+          <div
+            className={`absolute top-1/2 h-10 -translate-y-1/2 rounded-full ${theme.railClass}`}
+            style={{ left, width }}
+          >
+            <div
+              className={`absolute left-1.5 right-1.5 top-1/2 h-6 -translate-y-1/2 rounded-full bg-linear-to-r ${theme.barClass} shadow-sm`}
+            />
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -703,7 +822,7 @@ export function ProjectIndexPage() {
                   </p>
                 </div>
 
-                <div className="flex w-full flex-col gap-4 xl:max-w-2xl xl:flex-row xl:items-center xl:justify-end">
+                <div className="flex w-full flex-col gap-4 xl:max-w-3xl xl:flex-row xl:items-center xl:justify-end">
                   <div className="flex-1">
                     <label
                       htmlFor="project-search"
@@ -746,98 +865,100 @@ export function ProjectIndexPage() {
                 No projects match the current search.
               </div>
             ) : (
-              <div className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
-                {projects.map((project) => {
-                  const canOpenCurrent =
-                    !project.isActive &&
-                    project.currentProjectGuid !== project.projectGuid;
+              <div className="overflow-hidden rounded-4xl border border-slate-200 bg-white shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50">
+                      <tr className="text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        <th className="px-5 py-4">Project Ref</th>
+                        <th className="px-5 py-4">Site Code</th>
+                        <th className="px-5 py-4">Gateway</th>
+                        <th className="px-5 py-4">Reporting Stage</th>
+                        <th className="px-5 py-4">Project Status</th>
+                        <th className="px-5 py-4">Reporting Status</th>
+                        <th className="px-5 py-4">Responsible Manager</th>
+                        <th className="px-5 py-4">Last Updated</th>
+                        <th className="px-5 py-4 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {projects.map((project) => {
+                        const canOpenCurrent =
+                          !project.isActive &&
+                          project.currentProjectGuid !== project.projectGuid;
 
-                  return (
-                    <article
-                      key={project.projectGuid}
-                      className="rounded-4xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-[#8fb73e] hover:shadow-md"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-xl font-semibold text-slate-950">
-                              {project.projectRef}
-                            </h3>
-                            <span
-                              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                                project.isActive
-                                  ? "bg-emerald-50 text-emerald-700"
-                                  : "bg-slate-100 text-slate-700"
-                              }`}
-                            >
-                              {project.isActive ? "Active" : "Historical"}
-                            </span>
-                          </div>
-                          <p className="mt-2 text-sm text-slate-500">
-                            {project.siteCode} · {project.gateway} ·{" "}
-                            {project.reportingStage}
-                          </p>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => openProject(project.projectGuid)}
-                          className="inline-flex items-center gap-2 rounded-full bg-[#025437] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#01462e]"
-                        >
-                          Open <span aria-hidden="true">›</span>
-                        </button>
-                      </div>
-
-                      <dl className="mt-6 grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                            Project Status
-                          </dt>
-                          <dd className="mt-1 text-slate-900">
-                            {project.projectStatus}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                            Reporting Status
-                          </dt>
-                          <dd className="mt-1 text-slate-900">
-                            {project.reportingStatus}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                            Responsible Manager
-                          </dt>
-                          <dd className="mt-1 text-slate-900">
-                            {project.responsibleManager}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                            Last Updated
-                          </dt>
-                          <dd className="mt-1 text-slate-900">
-                            {project.lastUpdated}
-                          </dd>
-                        </div>
-                      </dl>
-
-                      {canOpenCurrent ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            openProject(project.currentProjectGuid)
-                          }
-                          className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[#025437] transition hover:text-[#01462e]"
-                        >
-                          Open current {project.currentProjectRef}{" "}
-                          <span aria-hidden="true">›</span>
-                        </button>
-                      ) : null}
-                    </article>
-                  );
-                })}
+                        return (
+                          <tr
+                            key={project.projectGuid}
+                            className="hover:bg-[#f7fbf8]"
+                          >
+                            <td className="px-5 py-4">
+                              <div className="flex items-center gap-3">
+                                <span className="font-semibold text-slate-950">
+                                  {project.projectRef}
+                                </span>
+                                <span
+                                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                                    project.isActive
+                                      ? "bg-emerald-50 text-emerald-700"
+                                      : "bg-slate-100 text-slate-700"
+                                  }`}
+                                >
+                                  {project.isActive ? "Active" : "Historical"}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-5 py-4 text-slate-600">
+                              {project.siteCode}
+                            </td>
+                            <td className="px-5 py-4 text-slate-600">
+                              {project.gateway}
+                            </td>
+                            <td className="px-5 py-4 text-slate-600">
+                              {project.reportingStage}
+                            </td>
+                            <td className="px-5 py-4 text-slate-900">
+                              {project.projectStatus}
+                            </td>
+                            <td className="px-5 py-4 text-slate-900">
+                              {project.reportingStatus}
+                            </td>
+                            <td className="px-5 py-4 text-slate-900">
+                              {project.responsibleManager}
+                            </td>
+                            <td className="px-5 py-4 text-slate-900">
+                              {project.lastUpdated}
+                            </td>
+                            <td className="px-5 py-4 text-right">
+                              <div className="flex items-center justify-end gap-3">
+                                {canOpenCurrent ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      openProject(project.currentProjectGuid)
+                                    }
+                                    className="text-sm font-semibold text-[#025437] transition hover:text-[#01462e]"
+                                  >
+                                    Open current
+                                  </button>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    openProject(project.projectGuid)
+                                  }
+                                  className="inline-flex items-center gap-2 rounded-full bg-[#025437] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#01462e]"
+                                >
+                                  Open <span aria-hidden="true">›</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </section>
@@ -1411,8 +1532,8 @@ export function ProjectIndexPage() {
                       Reporting Programme
                     </h3>
                     <p className="mt-1 text-sm text-slate-500">
-                      One aligned planner surface with editable dates and
-                      gantt-style timing.
+                      Table-based planner view with aligned dates and
+                      colour-coded gantt bars.
                     </p>
                   </div>
                   <div className="text-sm text-slate-500">
@@ -1423,172 +1544,172 @@ export function ProjectIndexPage() {
 
                 <div className="overflow-x-auto rounded-4xl border border-slate-200">
                   <div
-                    className="min-w-[1500px]"
+                    className="grid"
                     style={{
-                      display: "grid",
-                      gridTemplateColumns: `220px 90px 150px 150px 110px repeat(${timelineMonths.length}, minmax(72px, 1fr))`,
+                      gridTemplateColumns: `${REPORTING_LEFT_WIDTH}px minmax(${TIMELINE_MIN_WIDTH}px, 1fr)`,
+                      minWidth: REPORTING_LEFT_WIDTH + TIMELINE_MIN_WIDTH,
                     }}
                   >
-                    <div className="border-b border-slate-200 bg-slate-50 px-4 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Item
+                    <div
+                      className="grid border-b border-r border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500"
+                      style={{ gridTemplateColumns: REPORTING_LEFT_GRID }}
+                    >
+                      <div className="px-4 py-4">Item</div>
+                      <div className="px-3 py-4">Lvl</div>
+                      <div className="px-3 py-4">Start</div>
+                      <div className="px-3 py-4">End</div>
+                      <div className="px-3 py-4">Duration</div>
                     </div>
-                    <div className="border-b border-slate-200 bg-slate-50 px-3 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Lvl
+                    <div className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      <TimelineHeader months={timelineMonths} />
                     </div>
-                    <div className="border-b border-slate-200 bg-slate-50 px-3 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Start
-                    </div>
-                    <div className="border-b border-slate-200 bg-slate-50 px-3 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      End
-                    </div>
-                    <div className="border-b border-slate-200 bg-slate-50 px-3 py-4 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Duration
-                    </div>
-                    {timelineMonths.map((month, index) => (
-                      <div
-                        key={month.key}
-                        className={`border-b border-l border-slate-200 px-2 py-4 text-center text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 ${
-                          index % 2 === 0 ? "bg-slate-50" : "bg-white"
-                        }`}
-                      >
-                        {month.label}
-                      </div>
-                    ))}
 
-                    {reportingSections.map((section) => (
-                      <>
-                        <div className="col-span-full border-b border-slate-200 bg-[#edf5ef] px-4 py-3 text-sm font-semibold text-[#025437]">
-                          {section.sectionLabel}
-                        </div>
-                        {section.items.map((item) => {
-                          const placement = getTimelinePlacement(
-                            item,
-                            timelineMonths,
-                          );
-                          const timelineColumnStart =
-                            5 + (placement?.start ?? 1);
+                    {reportingSections.map((section) => {
+                      const theme = getSectionTheme(section.sectionCode);
 
-                          return (
-                            <>
-                              <div className="border-b border-slate-200 px-4 py-3 text-sm font-medium text-slate-900">
-                                {item.rowLabel}
-                              </div>
-                              <div className="border-b border-slate-200 px-3 py-3 text-sm text-slate-600">
-                                {item.levelCode}
-                              </div>
-                              <div className="border-b border-slate-200 px-3 py-2">
-                                <input
-                                  type="date"
-                                  disabled={!item.isEditable}
-                                  value={item.startDate}
-                                  onChange={(event) =>
-                                    setWorkspace((current) =>
-                                      current
-                                        ? {
-                                            ...current,
-                                            reportingProgramme:
-                                              current.reportingProgramme.map(
-                                                (row) =>
-                                                  row.id === item.id
-                                                    ? {
-                                                        ...row,
-                                                        startDate:
-                                                          event.target.value,
-                                                      }
-                                                    : row,
-                                              ),
-                                          }
-                                        : current,
-                                    )
-                                  }
-                                  onBlur={(event) =>
-                                    void handleReportingSave(item.id, {
-                                      startDate: event.target.value,
-                                    })
-                                  }
-                                  className={`w-full rounded-2xl border px-3 py-2 text-sm outline-none transition ${
-                                    item.isEditable
-                                      ? "border-slate-300 bg-white focus:border-[#006838] focus:ring-4 focus:ring-[#8fb73e]/20"
-                                      : "border-slate-200 bg-slate-50 text-slate-400"
-                                  }`}
-                                />
-                              </div>
-                              <div className="border-b border-slate-200 px-3 py-2">
-                                <input
-                                  type="date"
-                                  disabled={!item.isEditable}
-                                  value={item.endDate}
-                                  onChange={(event) =>
-                                    setWorkspace((current) =>
-                                      current
-                                        ? {
-                                            ...current,
-                                            reportingProgramme:
-                                              current.reportingProgramme.map(
-                                                (row) =>
-                                                  row.id === item.id
-                                                    ? {
-                                                        ...row,
-                                                        endDate:
-                                                          event.target.value,
-                                                      }
-                                                    : row,
-                                              ),
-                                          }
-                                        : current,
-                                    )
-                                  }
-                                  onBlur={(event) =>
-                                    void handleReportingSave(item.id, {
-                                      endDate: event.target.value,
-                                    })
-                                  }
-                                  className={`w-full rounded-2xl border px-3 py-2 text-sm outline-none transition ${
-                                    item.isEditable
-                                      ? "border-slate-300 bg-white focus:border-[#006838] focus:ring-4 focus:ring-[#8fb73e]/20"
-                                      : "border-slate-200 bg-slate-50 text-slate-400"
-                                  }`}
-                                />
-                                {validation[`reporting-${item.id}`] ? (
-                                  <p className="mt-2 text-xs text-red-600">
-                                    {validation[`reporting-${item.id}`]}
-                                  </p>
-                                ) : null}
-                              </div>
-                              <div className="border-b border-slate-200 px-3 py-3 text-sm text-slate-600">
-                                {getDurationLabel(item)}
-                              </div>
+                      return (
+                        <Fragment key={section.sectionCode}>
+                          <div
+                            className={`border-b border-r px-4 py-3 text-sm font-semibold ${theme.headerClass}`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <span
+                                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${theme.badgeClass}`}
+                              >
+                                Section
+                              </span>
+                              {section.sectionLabel}
+                            </div>
+                          </div>
+                          <div
+                            className={`border-b px-0 py-0 ${theme.headerClass}`}
+                          />
 
-                              {timelineMonths.map((month, index) => (
+                          {section.items.map((item) => {
+                            const placement = getTimelinePlacement(
+                              item,
+                              timelineMonths,
+                            );
+
+                            return (
+                              <Fragment key={item.id}>
                                 <div
-                                  key={`${item.id}-${month.key}`}
-                                  className={`border-b border-l border-slate-200 ${
-                                    index % 2 === 0
-                                      ? "bg-slate-50/80"
-                                      : "bg-white"
-                                  }`}
-                                  style={{ minHeight: 64 }}
-                                />
-                              ))}
-
-                              {placement ? (
-                                <div
-                                  className="pointer-events-none self-center px-2"
+                                  className="grid border-b border-r border-slate-200 bg-white hover:bg-slate-50/70"
                                   style={{
-                                    gridColumn: `${timelineColumnStart} / span ${placement.span}`,
-                                    gridRow: "span 1",
+                                    gridTemplateColumns: REPORTING_LEFT_GRID,
                                   }}
                                 >
-                                  <div className="flex h-8 items-center rounded-full bg-[#dcebdc] px-1.5">
-                                    <div className="h-5 w-full rounded-full bg-gradient-to-r from-[#8fb73e] to-[#025437]" />
+                                  <div
+                                    className={`px-4 py-3 ${theme.textClass}`}
+                                    style={{
+                                      boxShadow: `inset 4px 0 0 currentColor`,
+                                    }}
+                                  >
+                                    <div className="text-sm font-medium text-current">
+                                      {item.rowLabel}
+                                    </div>
+                                  </div>
+                                  <div className="px-3 py-3 text-sm text-slate-600">
+                                    {item.levelCode}
+                                  </div>
+                                  <div className="px-3 py-2">
+                                    <input
+                                      type="date"
+                                      disabled={!item.isEditable}
+                                      value={item.startDate}
+                                      onChange={(event) =>
+                                        setWorkspace((current) =>
+                                          current
+                                            ? {
+                                                ...current,
+                                                reportingProgramme:
+                                                  current.reportingProgramme.map(
+                                                    (row) =>
+                                                      row.id === item.id
+                                                        ? {
+                                                            ...row,
+                                                            startDate:
+                                                              event.target
+                                                                .value,
+                                                          }
+                                                        : row,
+                                                  ),
+                                              }
+                                            : current,
+                                        )
+                                      }
+                                      onBlur={(event) =>
+                                        void handleReportingSave(item.id, {
+                                          startDate: event.target.value,
+                                        })
+                                      }
+                                      className={`min-w-0 w-full rounded-2xl border px-3 py-2 text-sm outline-none transition ${
+                                        item.isEditable
+                                          ? "border-slate-300 bg-white focus:border-[#006838] focus:ring-4 focus:ring-[#8fb73e]/20"
+                                          : "border-slate-200 bg-slate-50 text-slate-400"
+                                      }`}
+                                    />
+                                  </div>
+                                  <div className="px-3 py-2">
+                                    <input
+                                      type="date"
+                                      disabled={!item.isEditable}
+                                      value={item.endDate}
+                                      onChange={(event) =>
+                                        setWorkspace((current) =>
+                                          current
+                                            ? {
+                                                ...current,
+                                                reportingProgramme:
+                                                  current.reportingProgramme.map(
+                                                    (row) =>
+                                                      row.id === item.id
+                                                        ? {
+                                                            ...row,
+                                                            endDate:
+                                                              event.target
+                                                                .value,
+                                                          }
+                                                        : row,
+                                                  ),
+                                              }
+                                            : current,
+                                        )
+                                      }
+                                      onBlur={(event) =>
+                                        void handleReportingSave(item.id, {
+                                          endDate: event.target.value,
+                                        })
+                                      }
+                                      className={`min-w-0 w-full rounded-2xl border px-3 py-2 text-sm outline-none transition ${
+                                        item.isEditable
+                                          ? "border-slate-300 bg-white focus:border-[#006838] focus:ring-4 focus:ring-[#8fb73e]/20"
+                                          : "border-slate-200 bg-slate-50 text-slate-400"
+                                      }`}
+                                    />
+                                    {validation[`reporting-${item.id}`] ? (
+                                      <p className="mt-2 text-xs text-red-600">
+                                        {validation[`reporting-${item.id}`]}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                  <div className="px-3 py-3 text-sm text-slate-600">
+                                    {getDurationLabel(item)}
                                   </div>
                                 </div>
-                              ) : null}
-                            </>
-                          );
-                        })}
-                      </>
-                    ))}
+                                <div className="border-b border-slate-200 bg-white hover:bg-slate-50/70">
+                                  <TimelineRow
+                                    months={timelineMonths}
+                                    placement={placement}
+                                    theme={theme}
+                                  />
+                                </div>
+                              </Fragment>
+                            );
+                          })}
+                        </Fragment>
+                      );
+                    })}
                   </div>
                 </div>
               </section>

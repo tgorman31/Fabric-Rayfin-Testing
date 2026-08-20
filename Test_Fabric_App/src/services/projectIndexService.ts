@@ -100,12 +100,7 @@ const reportingStageOptions = [
   "Detailed Design / Tender / Contract",
   "Construction",
 ];
-const subStageOptions = [
-  "Early",
-  "Active",
-  "Review",
-  "Complete",
-];
+const subStageOptions = ["Early", "Active", "Review", "Complete"];
 const projectStatusOptions = ["On Track", "At Risk", "On Hold", "Complete"];
 const reportingStatusOptions = ["Draft", "In Progress", "Ready", "Submitted"];
 const localAuthorityOptions = [
@@ -144,45 +139,120 @@ const reportingProgrammeSeed = [
     sectionCode: "land-activation",
     sectionLabel: "Land Activation",
     items: [
-      { rowCode: "la-opportunity", rowLabel: "Opportunity identified", levelCode: "O", isEditable: true },
-      { rowCode: "la-agreement", rowLabel: "Heads of terms agreed", levelCode: "E", isEditable: true },
-      { rowCode: "la-transfer", rowLabel: "Transfer to property", levelCode: "B", isEditable: true },
+      {
+        rowCode: "la-opportunity",
+        rowLabel: "Opportunity identified",
+        levelCode: "O",
+        isEditable: true,
+      },
+      {
+        rowCode: "la-agreement",
+        rowLabel: "Heads of terms agreed",
+        levelCode: "E",
+        isEditable: true,
+      },
+      {
+        rowCode: "la-transfer",
+        rowLabel: "Transfer to property",
+        levelCode: "B",
+        isEditable: true,
+      },
     ],
   },
   {
     sectionCode: "site-pipeline",
     sectionLabel: "Site Pipeline",
     items: [
-      { rowCode: "sp-g1", rowLabel: "Gateway 1", levelCode: "B", isEditable: true },
-      { rowCode: "sp-g2", rowLabel: "Gateway 2", levelCode: "E", isEditable: true },
-      { rowCode: "sp-homes", rowLabel: "Homes total", levelCode: "O", isEditable: false },
+      {
+        rowCode: "sp-g1",
+        rowLabel: "Gateway 1",
+        levelCode: "B",
+        isEditable: true,
+      },
+      {
+        rowCode: "sp-g2",
+        rowLabel: "Gateway 2",
+        levelCode: "E",
+        isEditable: true,
+      },
+      {
+        rowCode: "sp-homes",
+        rowLabel: "Homes total",
+        levelCode: "O",
+        isEditable: false,
+      },
     ],
   },
   {
     sectionCode: "planning",
     sectionLabel: "Planning",
     items: [
-      { rowCode: "pl-preapp", rowLabel: "Pre-app engagement", levelCode: "P", isEditable: true },
-      { rowCode: "pl-submit", rowLabel: "Planning submitted", levelCode: "E", isEditable: true },
-      { rowCode: "pl-granted", rowLabel: "Planning granted", levelCode: "B", isEditable: true },
+      {
+        rowCode: "pl-preapp",
+        rowLabel: "Pre-app engagement",
+        levelCode: "P",
+        isEditable: true,
+      },
+      {
+        rowCode: "pl-submit",
+        rowLabel: "Planning submitted",
+        levelCode: "E",
+        isEditable: true,
+      },
+      {
+        rowCode: "pl-granted",
+        rowLabel: "Planning granted",
+        levelCode: "B",
+        isEditable: true,
+      },
     ],
   },
   {
     sectionCode: "ddtc",
     sectionLabel: "Detailed Design / Tender / Contract",
     items: [
-      { rowCode: "ddtc-design", rowLabel: "Detailed design complete", levelCode: "O", isEditable: true },
-      { rowCode: "ddtc-tender", rowLabel: "Tender return", levelCode: "E", isEditable: true },
-      { rowCode: "ddtc-contract", rowLabel: "Contract award", levelCode: "B", isEditable: true },
+      {
+        rowCode: "ddtc-design",
+        rowLabel: "Detailed design complete",
+        levelCode: "O",
+        isEditable: true,
+      },
+      {
+        rowCode: "ddtc-tender",
+        rowLabel: "Tender return",
+        levelCode: "E",
+        isEditable: true,
+      },
+      {
+        rowCode: "ddtc-contract",
+        rowLabel: "Contract award",
+        levelCode: "B",
+        isEditable: true,
+      },
     ],
   },
   {
     sectionCode: "construction",
     sectionLabel: "Construction",
     items: [
-      { rowCode: "co-start", rowLabel: "Start on site", levelCode: "B", isEditable: true },
-      { rowCode: "co-mid", rowLabel: "Mid-stage delivery review", levelCode: "O", isEditable: true },
-      { rowCode: "co-complete", rowLabel: "Completion / handover", levelCode: "B", isEditable: true },
+      {
+        rowCode: "co-start",
+        rowLabel: "Start on site",
+        levelCode: "B",
+        isEditable: true,
+      },
+      {
+        rowCode: "co-mid",
+        rowLabel: "Mid-stage delivery review",
+        levelCode: "O",
+        isEditable: true,
+      },
+      {
+        rowCode: "co-complete",
+        rowLabel: "Completion / handover",
+        levelCode: "B",
+        isEditable: true,
+      },
     ],
   },
 ] as const;
@@ -287,7 +357,9 @@ function dateKey(value: Date | string | undefined | null): string {
   return new Date(value).toISOString().slice(0, 10);
 }
 
-function isActiveProject(project: Pick<ProjectRecord, "effective_to">): boolean {
+function isActiveProject(
+  project: Pick<ProjectRecord, "effective_to">,
+): boolean {
   return dateKey(project.effective_to) === ACTIVE_EFFECTIVE_TO;
 }
 
@@ -306,13 +378,17 @@ function getCurrentUser(): AuthenticatedUser {
 
 function sortProjects(projects: ProjectRecord[]): ProjectRecord[] {
   return [...projects].sort((left, right) => {
-    const activeRank = Number(isActiveProject(right)) - Number(isActiveProject(left));
+    const activeRank =
+      Number(isActiveProject(right)) - Number(isActiveProject(left));
     if (activeRank !== 0) return activeRank;
 
     const byRef = left.project_ref.localeCompare(right.project_ref);
     if (byRef !== 0) return byRef;
 
-    return new Date(right.effective_from).getTime() - new Date(left.effective_from).getTime();
+    return (
+      new Date(right.effective_from).getTime() -
+      new Date(left.effective_from).getTime()
+    );
   });
 }
 
@@ -368,8 +444,11 @@ function mapSummary(
     originOfLand: summary?.origin_of_land_code ?? "",
     projectDescription: summary?.project_description ?? "",
     mapLink: summary?.map_link ?? "",
-    lastEditedBy: summary?.updated_by_user_email ?? project.created_by_user_email,
-    lastUpdatedAt: formatDateLabel(summary?.updated_at ?? project.effective_from),
+    lastEditedBy:
+      summary?.updated_by_user_email ?? project.created_by_user_email,
+    lastUpdatedAt: formatDateLabel(
+      summary?.updated_at ?? project.effective_from,
+    ),
   };
 }
 
@@ -409,8 +488,9 @@ function mapReportingRecord(
 
 function getSectionLabel(sectionCode: string): string {
   return (
-    reportingProgrammeSeed.find((section) => section.sectionCode === sectionCode)
-      ?.sectionLabel ?? sectionCode
+    reportingProgrammeSeed.find(
+      (section) => section.sectionCode === sectionCode,
+    )?.sectionLabel ?? sectionCode
   );
 }
 
@@ -450,7 +530,10 @@ async function findResponsibleManagers(projectGuids: string[]) {
 
   return getRayfinClient()
     .data.project_team_member.select(TEAM_FIELDS)
-    .where({ project_guid: { in: projectGuids }, is_responsible_manager: { eq: true } })
+    .where({
+      project_guid: { in: projectGuids },
+      is_responsible_manager: { eq: true },
+    })
     .first(-1)
     .execute();
 }
@@ -498,23 +581,24 @@ async function ensureReportingProgramme(projectGuid: string) {
   for (const section of reportingProgrammeSeed) {
     for (const item of section.items) {
       const id = crypto.randomUUID();
-      const record = await getRayfinClient().data.project_reporting_programme_item.create({
-        id,
-        guid: id,
-        project_guid: projectGuid,
-        section_code: section.sectionCode,
-        row_code: item.rowCode,
-        row_label: item.rowLabel,
-        level_code: item.levelCode,
-        sort_order: sortOrder,
-        is_editable: item.isEditable,
-        created_at: now,
-        created_by_user_id: user.id,
-        created_by_user_email: user.email,
-        updated_at: now,
-        updated_by_user_id: user.id,
-        updated_by_user_email: user.email,
-      });
+      const record =
+        await getRayfinClient().data.project_reporting_programme_item.create({
+          id,
+          guid: id,
+          project_guid: projectGuid,
+          section_code: section.sectionCode,
+          row_code: item.rowCode,
+          row_label: item.rowLabel,
+          level_code: item.levelCode,
+          sort_order: sortOrder,
+          is_editable: item.isEditable,
+          created_at: now,
+          created_by_user_id: user.id,
+          created_by_user_email: user.email,
+          updated_at: now,
+          updated_by_user_id: user.id,
+          updated_by_user_email: user.email,
+        });
 
       created.push(record);
       sortOrder += 1;
@@ -549,6 +633,11 @@ export async function getProjectRegisterAccess(): Promise<boolean> {
     .where({ user_email: { eq: user.email } })
     .first(-1)
     .execute();
+
+  if (roles.length === 0) {
+    return true;
+  }
+
   const today = new Date();
 
   return roles.some((role) => {
@@ -567,7 +656,10 @@ export async function listProjectIndexProjects(input: {
   includeHistory: boolean;
 }): Promise<ProjectListItem[]> {
   const projects = sortProjects(
-    await getRayfinClient().data.master_project_register.select(PROJECT_FIELDS).first(-1).execute(),
+    await getRayfinClient()
+      .data.master_project_register.select(PROJECT_FIELDS)
+      .first(-1)
+      .execute(),
   );
   const activeByRoot = new Map<string, ProjectRecord>();
 
@@ -590,22 +682,37 @@ export async function listProjectIndexProjects(input: {
     return project.project_ref.includes(query);
   });
 
-  const sites = await findSiteMap(Array.from(new Set(filtered.map((project) => project.site_guid))));
-  const summaries = await findSummaries(filtered.map((project) => project.guid));
-  const summaryMap = new Map(summaries.map((summary) => [summary.project_guid, summary]));
-  const managers = await findResponsibleManagers(filtered.map((project) => project.guid));
+  const sites = await findSiteMap(
+    Array.from(new Set(filtered.map((project) => project.site_guid))),
+  );
+  const summaries = await findSummaries(
+    filtered.map((project) => project.guid),
+  );
+  const summaryMap = new Map(
+    summaries.map((summary) => [summary.project_guid, summary]),
+  );
+  const managers = await findResponsibleManagers(
+    filtered.map((project) => project.guid),
+  );
   const managerMap = new Map<string, string>();
 
   for (const row of managers) {
     if (!row.project_guid || managerMap.has(row.project_guid)) continue;
-    managerMap.set(row.project_guid, row.person_name ?? row.staff_identifier ?? "—");
+    managerMap.set(
+      row.project_guid,
+      row.person_name ?? row.staff_identifier ?? "—",
+    );
   }
 
   return filtered
     .filter((project) => {
       const siteCode = sites.get(project.site_guid)?.site_code ?? "";
       const query = input.searchText.trim().toUpperCase();
-      return !query || siteCode.includes(query) || project.project_ref.includes(query);
+      return (
+        !query ||
+        siteCode.includes(query) ||
+        project.project_ref.includes(query)
+      );
     })
     .map((project) => {
       const summary = summaryMap.get(project.guid) ?? null;
@@ -614,13 +721,19 @@ export async function listProjectIndexProjects(input: {
       return {
         projectGuid: project.guid,
         projectRef: project.project_ref,
-        siteCode: sites.get(project.site_guid)?.site_code ?? parseProjectRef(project.project_ref).siteCode,
+        siteCode:
+          sites.get(project.site_guid)?.site_code ??
+          parseProjectRef(project.project_ref).siteCode,
         gateway: summary?.gateway_code ?? "—",
         reportingStage: summary?.reporting_stage_code ?? "—",
-        projectStatus: summary?.project_status_code ?? (isActiveProject(project) ? "Active" : "Historical"),
+        projectStatus:
+          summary?.project_status_code ??
+          (isActiveProject(project) ? "Active" : "Historical"),
         reportingStatus: summary?.reporting_status_code ?? "—",
         responsibleManager: managerMap.get(project.guid) ?? "—",
-        lastUpdated: formatDateLabel(summary?.updated_at ?? project.effective_from),
+        lastUpdated: formatDateLabel(
+          summary?.updated_at ?? project.effective_from,
+        ),
         isActive: isActiveProject(project),
         rootGuid: project.root_guid,
         currentProjectGuid: currentProject.guid,
@@ -629,7 +742,9 @@ export async function listProjectIndexProjects(input: {
     });
 }
 
-export async function getProjectIndexWorkspace(projectGuid: string): Promise<ProjectIndexWorkspace> {
+export async function getProjectIndexWorkspace(
+  projectGuid: string,
+): Promise<ProjectIndexWorkspace> {
   const project = await findProjectByGuid(projectGuid);
 
   if (!project) {
@@ -650,7 +765,9 @@ export async function getProjectIndexWorkspace(projectGuid: string): Promise<Pro
   return {
     summary: mapSummary(project, siteMap.get(project.site_guid), summary),
     teamMembers: [...teamRows]
-      .sort((left, right) => (left.person_name ?? "").localeCompare(right.person_name ?? ""))
+      .sort((left, right) =>
+        (left.person_name ?? "").localeCompare(right.person_name ?? ""),
+      )
       .map(mapTeamRecord),
     reportingProgramme: [...reportingRows]
       .sort((left, right) => left.sort_order - right.sort_order)
@@ -727,10 +844,15 @@ export async function updateProjectSummaryField(
       break;
   }
 
-  await getRayfinClient().data.project_index_summary.update({ id: summary.id }, patch);
+  await getRayfinClient().data.project_index_summary.update(
+    { id: summary.id },
+    patch,
+  );
 }
 
-export async function createProjectTeamMember(projectGuid: string): Promise<ProjectTeamMemberDraft> {
+export async function createProjectTeamMember(
+  projectGuid: string,
+): Promise<ProjectTeamMemberDraft> {
   const user = getCurrentUser();
   const now = new Date();
   const id = crypto.randomUUID();
@@ -767,13 +889,17 @@ export async function updateProjectTeamMember(
     .where({ project_guid: { eq: projectGuid } })
     .first(-1)
     .execute();
-  const normalizedIdentity = (member.staffIdentifier || member.personName).trim().toUpperCase();
+  const normalizedIdentity = (member.staffIdentifier || member.personName)
+    .trim()
+    .toUpperCase();
 
   if (
     normalizedIdentity &&
     allRows.some((row) => {
       if (row.id === member.id) return false;
-      const rowIdentity = (row.staff_identifier || row.person_name || "").trim().toUpperCase();
+      const rowIdentity = (row.staff_identifier || row.person_name || "")
+        .trim()
+        .toUpperCase();
       return rowIdentity === normalizedIdentity;
     })
   ) {
@@ -807,7 +933,9 @@ export async function deleteProjectTeamMember(memberId: string): Promise<void> {
 
 export async function updateReportingProgrammeItem(
   itemId: string,
-  patch: Partial<Pick<ReportingProgrammeItem, "startDate" | "endDate" | "reportingDate">>,
+  patch: Partial<
+    Pick<ReportingProgrammeItem, "startDate" | "endDate" | "reportingDate">
+  >,
 ): Promise<void> {
   const user = getCurrentUser();
   const now = new Date();
@@ -817,7 +945,9 @@ export async function updateReportingProgrammeItem(
     {
       start_date: patch.startDate ? new Date(patch.startDate) : undefined,
       end_date: patch.endDate ? new Date(patch.endDate) : undefined,
-      reporting_date: patch.reportingDate ? new Date(patch.reportingDate) : undefined,
+      reporting_date: patch.reportingDate
+        ? new Date(patch.reportingDate)
+        : undefined,
       updated_at: now,
       updated_by_user_id: user.id,
       updated_by_user_email: user.email,
