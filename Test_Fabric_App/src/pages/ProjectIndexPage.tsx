@@ -1,12 +1,14 @@
-import {
-  Fragment,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import {
+  CircleMarker,
+  MapContainer,
+  TileLayer,
+  Tooltip,
+  useMap,
+  useMapEvents,
+} from "react-leaflet";
+import type { LatLngBoundsLiteral } from "leaflet";
 
 import { useAuth } from "@/hooks/AuthContext";
 import {
@@ -47,6 +49,11 @@ type TimelineSegment = {
   key: string;
   label: string;
   spanDays: number;
+};
+
+type TimelineHeaderRow = {
+  scale: TimelineScale | "quarter";
+  tone: "top" | "mid" | "bottom";
 };
 
 type TimelineDragState = {
@@ -158,6 +165,7 @@ const TIMELINE_SCALE_LABELS: Record<TimelineScale, string> = {
   week: "Weeks",
   day: "Days",
 };
+const TIMELINE_HEADER_ROW_HEIGHT = 40;
 const MAP_MIN_LAT = 51.2;
 const MAP_MAX_LAT = 55.6;
 const MAP_MIN_LNG = -10.9;
@@ -165,7 +173,7 @@ const MAP_MAX_LNG = -5.1;
 const DEFAULT_MAP_VIEWPORT: MapViewport = {
   centerLat: 53.35,
   centerLng: -8.0,
-  zoom: 1,
+  zoom: 7,
 };
 
 const countyAnchors: Record<
@@ -364,7 +372,7 @@ function getTimelinePlacement(
 
 function buildTimelineSegments(
   range: TimelineRange,
-  mode: "year" | "quarter" | "month" | "week" | "day",
+  mode: TimelineScale | "quarter",
 ): TimelineSegment[] {
   const segments: TimelineSegment[] = [];
   let cursor = startOfDay(range.start);
@@ -413,6 +421,64 @@ function buildTimelineSegments(
   return segments;
 }
 
+function getTimelineHeaderRows(scale: TimelineScale): TimelineHeaderRow[] {
+  switch (scale) {
+    case "year":
+      return [
+        { scale: "year", tone: "top" },
+        { scale: "quarter", tone: "bottom" },
+      ];
+    case "quarter":
+      return [
+        { scale: "year", tone: "top" },
+        { scale: "month", tone: "bottom" },
+      ];
+    case "month":
+      return [
+        { scale: "year", tone: "top" },
+        { scale: "quarter", tone: "mid" },
+        { scale: "month", tone: "bottom" },
+      ];
+    case "week":
+      return [
+        { scale: "year", tone: "top" },
+        { scale: "month", tone: "mid" },
+        { scale: "week", tone: "bottom" },
+      ];
+    case "day":
+      return [
+        { scale: "year", tone: "top" },
+        { scale: "month", tone: "mid" },
+        { scale: "day", tone: "bottom" },
+      ];
+  }
+}
+
+function getTimelineGridScale(scale: TimelineScale): TimelineScale | "quarter" {
+  return scale === "year" ? "quarter" : scale;
+}
+
+function getTimelineSnapDate(
+  date: Date,
+  scale: TimelineScale,
+  edge: "start" | "end",
+): Date {
+  if (scale === "year") {
+    return edge === "start" ? startOfQuarter(date) : endOfQuarter(date);
+  }
+  if (scale === "quarter") {
+    return edge === "start" ? startOfMonth(date) : endOfMonth(date);
+  }
+  if (scale === "month") {
+    return edge === "start" ? startOfWeek(date) : endOfWeek(date);
+  }
+  return startOfDay(date);
+}
+
+function clampDate(date: Date, min: Date, max: Date): Date {
+  return new Date(clamp(date.getTime(), min.getTime(), max.getTime()));
+}
+
 function formatDateInput(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
@@ -459,34 +525,12 @@ function buildProjectMapPoint(project: ProjectListItem): MapProjectPoint {
   };
 }
 
-function getMapBounds(viewport: MapViewport): MapBounds {
-  const latSpan = (MAP_MAX_LAT - MAP_MIN_LAT) / viewport.zoom;
-  const lngSpan = (MAP_MAX_LNG - MAP_MIN_LNG) / viewport.zoom;
-
+function getDefaultMapBounds(): MapBounds {
   return {
-    minLat: viewport.centerLat - latSpan / 2,
-    maxLat: viewport.centerLat + latSpan / 2,
-    minLng: viewport.centerLng - lngSpan / 2,
-    maxLng: viewport.centerLng + lngSpan / 2,
-  };
-}
-
-function clampViewport(viewport: MapViewport): MapViewport {
-  const latSpan = (MAP_MAX_LAT - MAP_MIN_LAT) / viewport.zoom;
-  const lngSpan = (MAP_MAX_LNG - MAP_MIN_LNG) / viewport.zoom;
-
-  return {
-    zoom: clamp(viewport.zoom, 1, 5),
-    centerLat: clamp(
-      viewport.centerLat,
-      MAP_MIN_LAT + latSpan / 2,
-      MAP_MAX_LAT - latSpan / 2,
-    ),
-    centerLng: clamp(
-      viewport.centerLng,
-      MAP_MIN_LNG + lngSpan / 2,
-      MAP_MAX_LNG - lngSpan / 2,
-    ),
+    minLat: MAP_MIN_LAT,
+    maxLat: MAP_MAX_LAT,
+    minLng: MAP_MIN_LNG,
+    maxLng: MAP_MAX_LNG,
   };
 }
 
@@ -500,16 +544,6 @@ function isPointInBounds(
     point.lng >= bounds.minLng &&
     point.lng <= bounds.maxLng
   );
-}
-
-function getMapPointPosition(
-  point: Pick<MapProjectPoint, "lat" | "lng">,
-  bounds: MapBounds,
-) {
-  return {
-    left: ((point.lng - bounds.minLng) / (bounds.maxLng - bounds.minLng)) * 100,
-    top: ((bounds.maxLat - point.lat) / (bounds.maxLat - bounds.minLat)) * 100,
-  };
 }
 
 function groupReportingSections(
@@ -622,44 +656,46 @@ function TimelineHeader({
   scale: TimelineScale;
   dayWidth: number;
 }) {
-  const topSegments = useMemo(
-    () => buildTimelineSegments(range, "year"),
-    [range],
-  );
-  const bottomSegments = useMemo(
-    () => buildTimelineSegments(range, scale === "year" ? "quarter" : scale),
-    [range, scale],
-  );
+  const rows = useMemo(() => getTimelineHeaderRows(scale), [scale]);
 
   return (
     <div
       className="border-l border-slate-200"
       style={{ width: range.totalDays * dayWidth }}
     >
-      <div className="flex border-b border-slate-200">
-        {topSegments.map((segment) => (
+      {rows.map((row, rowIndex) => {
+        const segments = buildTimelineSegments(range, row.scale);
+        const toneClass =
+          row.tone === "top"
+            ? "bg-slate-100 text-[11px] tracking-[0.22em]"
+            : row.tone === "mid"
+              ? "bg-slate-50 text-[11px] tracking-[0.2em]"
+              : "bg-white text-xs tracking-[0.18em]";
+
+        return (
           <div
-            key={segment.key}
-            className="flex h-9 items-center justify-center border-l border-slate-200 bg-slate-100 px-2 text-[11px] font-semibold uppercase tracking-[0.22em] whitespace-nowrap text-slate-500 first:border-l-0"
-            style={{ width: segment.spanDays * dayWidth }}
+            key={`${row.scale}-${rowIndex}`}
+            className="flex border-b border-slate-200"
           >
-            {segment.label}
+            {segments.map((segment, segmentIndex) => (
+              <div
+                key={segment.key}
+                className={`flex items-center justify-center border-l border-slate-200 px-2 font-semibold uppercase whitespace-nowrap text-slate-500 first:border-l-0 ${toneClass} ${
+                  row.tone === "bottom" && segmentIndex % 2 === 0
+                    ? "bg-slate-50"
+                    : ""
+                }`}
+                style={{
+                  width: segment.spanDays * dayWidth,
+                  height: TIMELINE_HEADER_ROW_HEIGHT,
+                }}
+              >
+                {segment.label}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      <div className="flex">
-        {bottomSegments.map((segment, index) => (
-          <div
-            key={segment.key}
-            className={`flex h-11 items-center justify-center border-l border-slate-200 px-2 text-center text-xs font-semibold uppercase tracking-[0.18em] whitespace-nowrap text-slate-500 first:border-l-0 ${
-              index % 2 === 0 ? "bg-slate-50" : "bg-white"
-            }`}
-            style={{ width: segment.spanDays * dayWidth }}
-          >
-            {segment.label}
-          </div>
-        ))}
-      </div>
+        );
+      })}
     </div>
   );
 }
@@ -688,7 +724,7 @@ function TimelineRow({
 }) {
   const rowRef = useRef<HTMLDivElement | null>(null);
   const segments = useMemo(
-    () => buildTimelineSegments(range, scale === "year" ? "quarter" : scale),
+    () => buildTimelineSegments(range, getTimelineGridScale(scale)),
     [range, scale],
   );
 
@@ -745,74 +781,92 @@ function TimelineRow({
   );
 }
 
+function LeafletMapController({
+  viewport,
+  onViewportChange,
+  onBoundsChange,
+}: {
+  viewport: MapViewport;
+  onViewportChange: (viewport: MapViewport) => void;
+  onBoundsChange: (bounds: MapBounds) => void;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    const center = map.getCenter();
+    if (
+      Math.abs(center.lat - viewport.centerLat) > 0.0001 ||
+      Math.abs(center.lng - viewport.centerLng) > 0.0001 ||
+      map.getZoom() !== viewport.zoom
+    ) {
+      map.setView([viewport.centerLat, viewport.centerLng], viewport.zoom, {
+        animate: false,
+      });
+    }
+  }, [map, viewport]);
+
+  useMapEvents({
+    moveend() {
+      const center = map.getCenter();
+      const bounds = map.getBounds();
+      onViewportChange({
+        centerLat: center.lat,
+        centerLng: center.lng,
+        zoom: map.getZoom(),
+      });
+      onBoundsChange({
+        minLat: bounds.getSouth(),
+        maxLat: bounds.getNorth(),
+        minLng: bounds.getWest(),
+        maxLng: bounds.getEast(),
+      });
+    },
+  });
+
+  useEffect(() => {
+    const bounds = map.getBounds();
+    onBoundsChange({
+      minLat: bounds.getSouth(),
+      maxLat: bounds.getNorth(),
+      minLng: bounds.getWest(),
+      maxLng: bounds.getEast(),
+    });
+  }, [map, onBoundsChange]);
+
+  return null;
+}
+
 function ProjectLocationMap({
   points,
   viewport,
   selectedProjectGuid,
   onViewportChange,
+  onBoundsChange,
   onOpenProject,
 }: {
   points: MapProjectPoint[];
   viewport: MapViewport;
   selectedProjectGuid: string | null;
   onViewportChange: (viewport: MapViewport) => void;
+  onBoundsChange: (bounds: MapBounds) => void;
   onOpenProject: (projectGuid: string) => void;
 }) {
-  const bounds = useMemo(() => getMapBounds(viewport), [viewport]);
   const visiblePoints = useMemo(
-    () => points.filter((point) => isPointInBounds(point, bounds)),
-    [bounds, points],
-  );
-  const mapRef = useRef<HTMLDivElement | null>(null);
-
-  const focusViewportFromInteraction = useCallback(
-    (
-      clientX: number,
-      clientY: number,
-      container: HTMLDivElement,
-      nextZoom: number,
-    ) => {
-      const rect = container.getBoundingClientRect();
-      const x = clamp((clientX - rect.left) / rect.width, 0, 1);
-      const y = clamp((clientY - rect.top) / rect.height, 0, 1);
-      const focusLng = bounds.minLng + x * (bounds.maxLng - bounds.minLng);
-      const focusLat = bounds.maxLat - y * (bounds.maxLat - bounds.minLat);
-      const latSpan = (MAP_MAX_LAT - MAP_MIN_LAT) / nextZoom;
-      const lngSpan = (MAP_MAX_LNG - MAP_MIN_LNG) / nextZoom;
-
-      onViewportChange(
-        clampViewport({
-          centerLat: focusLat + (y - 0.5) * latSpan,
-          centerLng: focusLng - (x - 0.5) * lngSpan,
-          zoom: nextZoom,
-        }),
-      );
-    },
-    [bounds, onViewportChange],
+    () =>
+      points.filter(
+        (point) =>
+          point.lat >= MAP_MIN_LAT &&
+          point.lat <= MAP_MAX_LAT &&
+          point.lng >= MAP_MIN_LNG &&
+          point.lng <= MAP_MAX_LNG,
+      ),
+    [points],
   );
 
-  useEffect(() => {
-    const container = mapRef.current;
-    if (!container) return;
-    const mapElement = container;
-
-    function handleWheel(event: WheelEvent) {
-      event.preventDefault();
-      event.stopPropagation();
-      const deltaSource = event.ctrlKey ? event.deltaY / 40 : event.deltaY;
-      const delta = deltaSource < 0 ? 0.35 : -0.35;
-      const nextZoom = clamp(viewport.zoom + delta, 1, 5);
-      focusViewportFromInteraction(
-        event.clientX,
-        event.clientY,
-        mapElement,
-        nextZoom,
-      );
-    }
-
-    mapElement.addEventListener("wheel", handleWheel, { passive: false });
-    return () => mapElement.removeEventListener("wheel", handleWheel);
-  }, [focusViewportFromInteraction, viewport.zoom]);
+  const irelandBounds: LatLngBoundsLiteral = [
+    [MAP_MIN_LAT, MAP_MIN_LNG],
+    [MAP_MAX_LAT, MAP_MAX_LNG],
+  ];
 
   return (
     <div className="rounded-4xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -820,18 +874,18 @@ function ProjectLocationMap({
         <div>
           <h3 className="text-lg font-semibold text-slate-950">Project map</h3>
           <p className="mt-1 text-sm text-slate-500">
-            Ireland placeholder view using county-based positions from the
-            site-code prefix. Zooming filters the list to projects inside the
-            current view.
+            OpenStreetMap view of Ireland. Zooming or panning filters the
+            project list to projects inside the current map extent.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() =>
-              onViewportChange(
-                clampViewport({ ...viewport, zoom: viewport.zoom - 0.4 }),
-              )
+              onViewportChange({
+                ...viewport,
+                zoom: Math.max(6, viewport.zoom - 1),
+              })
             }
             className="rounded-full border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
           >
@@ -840,9 +894,10 @@ function ProjectLocationMap({
           <button
             type="button"
             onClick={() =>
-              onViewportChange(
-                clampViewport({ ...viewport, zoom: viewport.zoom + 0.4 }),
-              )
+              onViewportChange({
+                ...viewport,
+                zoom: Math.min(18, viewport.zoom + 1),
+              })
             }
             className="rounded-full border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
           >
@@ -858,90 +913,59 @@ function ProjectLocationMap({
         </div>
       </div>
 
-      <div
-        ref={mapRef}
-        className="relative h-140 overflow-hidden rounded-4xl border border-slate-200 bg-linear-to-br from-slate-100 via-emerald-50 to-cyan-50 overscroll-contain touch-none"
-        style={{ touchAction: "none" }}
-        onClick={(event) => {
-          focusViewportFromInteraction(
-            event.clientX,
-            event.clientY,
-            event.currentTarget,
-            viewport.zoom,
-          );
-        }}
-      >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(2,84,55,0.08),transparent_45%),linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)] bg-size-[auto,16%,16%]" />
-        <svg
-          viewBox="0 0 100 140"
-          className="absolute inset-0 h-full w-full"
-          aria-hidden="true"
-          preserveAspectRatio="xMidYMid meet"
+      <div className="overflow-hidden rounded-4xl border border-slate-200">
+        <MapContainer
+          center={[viewport.centerLat, viewport.centerLng]}
+          zoom={viewport.zoom}
+          minZoom={6}
+          maxZoom={18}
+          maxBounds={irelandBounds}
+          maxBoundsViscosity={1}
+          scrollWheelZoom={true}
+          zoomControl={false}
+          doubleClickZoom={false}
+          className="h-140 w-full"
         >
-          <path
-            d="M26 17 L34 10 L45 11 L53 16 L61 15 L70 24 L75 36 L78 50 L75 64 L80 77 L76 92 L68 103 L60 110 L58 121 L47 130 L36 127 L30 118 L22 114 L16 101 L12 89 L15 76 L13 63 L17 50 L15 39 L20 28 Z"
-            fill="rgba(255,255,255,0.72)"
-            stroke="rgba(2,84,55,0.24)"
-            strokeWidth="1.5"
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          <path
-            d="M64 18 L71 17 L77 21 L80 27 L77 33 L70 35 L65 31 L63 24 Z"
-            fill="rgba(255,255,255,0.68)"
-            stroke="rgba(2,84,55,0.22)"
-            strokeWidth="1.2"
+          <LeafletMapController
+            viewport={viewport}
+            onViewportChange={onViewportChange}
+            onBoundsChange={onBoundsChange}
           />
-        </svg>
+          {visiblePoints.map((point) => {
+            const isSelected = point.projectGuid === selectedProjectGuid;
 
-        {visiblePoints.map((point) => {
-          const position = getMapPointPosition(point, bounds);
-          const isSelected = point.projectGuid === selectedProjectGuid;
-
-          return (
-            <button
-              key={point.projectGuid}
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onViewportChange(
-                  clampViewport({
-                    ...viewport,
-                    centerLat: point.lat,
-                    centerLng: point.lng,
-                  }),
-                );
-              }}
-              onDoubleClick={(event) => {
-                event.stopPropagation();
-                onOpenProject(point.projectGuid);
-              }}
-              className={`group absolute -translate-x-1/2 -translate-y-1/2 ${isSelected ? "z-20" : "z-10"}`}
-              style={{ left: `${position.left}%`, top: `${position.top}%` }}
-              title={`${point.projectRef} · ${point.projectName || point.siteCode}`}
-            >
-              <span
-                className={`block h-4 w-4 rounded-full border-2 border-white shadow-md transition ${
-                  isSelected
-                    ? "bg-[#025437]"
-                    : "bg-[#8fb73e] group-hover:bg-[#006838]"
-                }`}
-              />
-              <span className="pointer-events-none absolute left-1/2 top-full mt-2 hidden -translate-x-1/2 rounded-full bg-slate-950/90 px-3 py-1 text-xs font-medium whitespace-nowrap text-white group-hover:block">
-                {point.projectRef}
-              </span>
-            </button>
-          );
-        })}
-
-        <div className="absolute left-4 top-4 rounded-2xl bg-white/90 px-3 py-2 text-xs text-slate-600 shadow-sm backdrop-blur">
-          Zoom {viewport.zoom.toFixed(1)}×
-          <div className="mt-1 text-[11px] text-slate-500">
-            Pinch or wheel inside map to zoom · click to re-centre ·
-            double-click marker to open
-          </div>
-        </div>
-        <div className="absolute bottom-4 right-4 rounded-2xl bg-white/90 px-3 py-2 text-xs text-slate-600 shadow-sm backdrop-blur">
-          {visiblePoints.length} projects in view
-        </div>
+            return (
+              <CircleMarker
+                key={point.projectGuid}
+                center={[point.lat, point.lng]}
+                radius={isSelected ? 9 : 7}
+                pathOptions={{
+                  color: "#ffffff",
+                  weight: 2,
+                  fillColor: isSelected ? "#025437" : "#8fb73e",
+                  fillOpacity: 0.95,
+                }}
+                eventHandlers={{
+                  click: () =>
+                    onViewportChange({
+                      ...viewport,
+                      centerLat: point.lat,
+                      centerLng: point.lng,
+                    }),
+                  dblclick: () => onOpenProject(point.projectGuid),
+                }}
+              >
+                <Tooltip direction="top" offset={[0, -8]}>
+                  {point.projectRef} · {point.projectName || point.siteCode}
+                </Tooltip>
+              </CircleMarker>
+            );
+          })}
+        </MapContainer>
       </div>
     </div>
   );
@@ -966,6 +990,9 @@ export function ProjectIndexPage() {
   const [validation, setValidation] = useState<ValidationState>({});
   const [mapViewport, setMapViewport] =
     useState<MapViewport>(DEFAULT_MAP_VIEWPORT);
+  const [visibleMapBounds, setVisibleMapBounds] = useState<MapBounds>(
+    getDefaultMapBounds(),
+  );
   const [timelineScale, setTimelineScale] = useState<TimelineScale>("month");
   const [timelineDragState, setTimelineDragState] =
     useState<TimelineDragState | null>(null);
@@ -1070,11 +1097,6 @@ export function ProjectIndexPage() {
     [projects],
   );
 
-  const visibleMapBounds = useMemo(
-    () => getMapBounds(mapViewport),
-    [mapViewport],
-  );
-
   const visibleProjectGuids = useMemo(
     () =>
       new Set(
@@ -1105,6 +1127,8 @@ export function ProjectIndexPage() {
 
   const timelineDayWidth = TIMELINE_DAY_WIDTH[timelineScale];
   const timelineWidth = timelineRange.totalDays * timelineDayWidth;
+  const timelineHeaderHeight =
+    getTimelineHeaderRows(timelineScale).length * TIMELINE_HEADER_ROW_HEIGHT;
 
   useEffect(() => {
     if (!timelineDragState) return;
@@ -1118,7 +1142,12 @@ export function ProjectIndexPage() {
         Math.max(0, timelineRange.totalDays - 1),
       );
       const targetDate = addDays(timelineRange.start, dayIndex);
-      const nextValue = formatDateInput(targetDate);
+      const snappedDate = clampDate(
+        getTimelineSnapDate(targetDate, timelineScale, dragState.edge),
+        timelineRange.start,
+        timelineRange.end,
+      );
+      const nextValue = formatDateInput(snappedDate);
 
       setWorkspace((current) => {
         if (!current) return current;
@@ -1200,7 +1229,7 @@ export function ProjectIndexPage() {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
     };
-  }, [timelineDragState, timelineRange, user?.email]);
+  }, [timelineDragState, timelineRange, timelineScale, user?.email]);
 
   function openProject(projectGuid: string) {
     navigate(`/project-index/${projectGuid}`);
@@ -1691,6 +1720,7 @@ export function ProjectIndexPage() {
                   viewport={mapViewport}
                   selectedProjectGuid={selectedProjectGuid}
                   onViewportChange={setMapViewport}
+                  onBoundsChange={setVisibleMapBounds}
                   onOpenProject={openProject}
                 />
               </div>
@@ -2304,7 +2334,7 @@ export function ProjectIndexPage() {
                         className="grid border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500"
                         style={{
                           gridTemplateColumns: REPORTING_LEFT_GRID,
-                          height: 80,
+                          height: timelineHeaderHeight,
                         }}
                       >
                         <div className="flex items-center px-4">Item</div>
