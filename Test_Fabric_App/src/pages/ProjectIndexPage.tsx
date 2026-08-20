@@ -1,4 +1,11 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { useAuth } from "@/hooks/AuthContext";
@@ -28,23 +35,25 @@ type MajorTab =
 type InfoSection = "summary" | "team";
 type ValidationState = Record<string, string | undefined>;
 
-type TimelineMonth = {
-  key: string;
-  label: string;
+type TimelineScale = "year" | "quarter" | "month" | "week" | "day";
+
+type TimelineRange = {
   start: Date;
+  end: Date;
+  totalDays: number;
 };
 
-type TimelineYearGroup = {
+type TimelineSegment = {
   key: string;
   label: string;
-  span: number;
+  spanDays: number;
 };
 
 type TimelineDragState = {
   itemId: string;
   edge: "start" | "end";
   rowLeft: number;
-  rowWidth: number;
+  dayWidth: number;
 };
 
 type ReportingSectionGroup = {
@@ -127,7 +136,28 @@ const sectionThemes: Record<string, SectionTheme> = {
 
 const REPORTING_LEFT_GRID = "260px 72px 156px 156px 96px";
 const REPORTING_LEFT_WIDTH = 740;
-const TIMELINE_MIN_WIDTH = 980;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const TIMELINE_DAY_WIDTH: Record<TimelineScale, number> = {
+  year: 2,
+  quarter: 4,
+  month: 8,
+  week: 16,
+  day: 28,
+};
+const TIMELINE_SCALE_ORDER: TimelineScale[] = [
+  "year",
+  "quarter",
+  "month",
+  "week",
+  "day",
+];
+const TIMELINE_SCALE_LABELS: Record<TimelineScale, string> = {
+  year: "Year",
+  quarter: "Quarters",
+  month: "Months",
+  week: "Weeks",
+  day: "Days",
+};
 const MAP_MIN_LAT = 51.2;
 const MAP_MAX_LAT = 55.6;
 const MAP_MIN_LNG = -10.9;
@@ -208,12 +238,20 @@ function statusTone(saveState: SaveState) {
   }
 }
 
+function startOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
 function startOfMonth(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
 function addMonths(date: Date, count: number): Date {
   return new Date(date.getFullYear(), date.getMonth() + count, 1);
+}
+
+function addDays(date: Date, count: number): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + count);
 }
 
 function monthDiff(from: Date, to: Date): number {
@@ -232,6 +270,36 @@ function formatMonthLabel(date: Date): string {
   return new Intl.DateTimeFormat("en-GB", { month: "short" }).format(date);
 }
 
+function endOfMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0);
+}
+
+function startOfQuarter(date: Date): Date {
+  return new Date(date.getFullYear(), Math.floor(date.getMonth() / 3) * 3, 1);
+}
+
+function endOfQuarter(date: Date): Date {
+  return endOfMonth(
+    new Date(date.getFullYear(), Math.floor(date.getMonth() / 3) * 3 + 2, 1),
+  );
+}
+
+function startOfWeek(date: Date): Date {
+  const day = date.getDay();
+  const delta = day === 0 ? -6 : 1 - day;
+  return startOfDay(addDays(date, delta));
+}
+
+function endOfWeek(date: Date): Date {
+  return addDays(startOfWeek(date), 6);
+}
+
+function getDaysDiff(from: Date, to: Date): number {
+  return Math.round(
+    (startOfDay(to).getTime() - startOfDay(from).getTime()) / MS_PER_DAY,
+  );
+}
+
 function getDurationLabel(item: ReportingProgrammeItem): string {
   const start = dateFromInput(item.startDate);
   const end = dateFromInput(item.endDate);
@@ -247,34 +315,31 @@ function getDurationLabel(item: ReportingProgrammeItem): string {
   return `${months} mo`;
 }
 
-function buildTimelineMonths(items: ReportingProgrammeItem[]): TimelineMonth[] {
+function buildTimelineRange(items: ReportingProgrammeItem[]): TimelineRange {
   const dates = items
     .flatMap((item) => [item.startDate, item.endDate])
     .filter(Boolean)
-    .map((value) => startOfMonth(new Date(`${value as string}T00:00:00`)));
+    .map((value) => dateFromInput(value as string))
+    .filter((value): value is Date => Boolean(value))
+    .sort((a, b) => a.getTime() - b.getTime());
 
-  const sorted = [...dates].sort((a, b) => a.getTime() - b.getTime());
-  const base = sorted[0] ?? startOfMonth(new Date());
-  const last = sorted[sorted.length - 1] ?? addMonths(base, 7);
-  const start = addMonths(base, -1);
-  const span = Math.max(8, monthDiff(start, addMonths(last, 1)) + 1);
+  const earliest = dates[0] ?? startOfDay(new Date());
+  const latest = dates[dates.length - 1] ?? addMonths(earliest, 7);
+  const start = startOfMonth(earliest);
+  const end = endOfMonth(latest);
 
-  return Array.from({ length: span }, (_, index) => {
-    const date = addMonths(start, index);
-    return {
-      key: `${date.getFullYear()}-${date.getMonth()}`,
-      label: formatMonthLabel(date),
-      start: date,
-    };
-  });
+  return {
+    start,
+    end,
+    totalDays: getDaysDiff(start, end) + 1,
+  };
 }
 
 function getTimelinePlacement(
   item: ReportingProgrammeItem,
-  timelineMonths: TimelineMonth[],
-): { start: number; span: number } | null {
-  if (timelineMonths.length === 0) return null;
-
+  timelineRange: TimelineRange,
+  dayWidth: number,
+): { left: number; width: number } | null {
   const startSource =
     dateFromInput(item.startDate) ?? dateFromInput(item.endDate);
   const endSource =
@@ -282,36 +347,70 @@ function getTimelinePlacement(
 
   if (!startSource || !endSource) return null;
 
-  const timelineStart = timelineMonths[0].start;
-  const itemStart = startOfMonth(startSource);
-  const itemEnd = startOfMonth(endSource);
-  const unclampedStart = monthDiff(timelineStart, itemStart) + 1;
-  const unclampedEnd = monthDiff(timelineStart, itemEnd) + 1;
-  const start = Math.max(1, Math.min(timelineMonths.length, unclampedStart));
-  const end = Math.max(start, Math.min(timelineMonths.length, unclampedEnd));
+  const itemStart = startOfDay(startSource);
+  const itemEnd = startOfDay(endSource < startSource ? startSource : endSource);
+  const left = clamp(
+    getDaysDiff(timelineRange.start, itemStart) * dayWidth,
+    0,
+    timelineRange.totalDays * dayWidth,
+  );
+  const width = Math.max(
+    dayWidth,
+    (getDaysDiff(itemStart, itemEnd) + 1) * dayWidth,
+  );
 
-  return { start, span: end - start + 1 };
+  return { left, width };
 }
 
-function buildTimelineYears(months: TimelineMonth[]): TimelineYearGroup[] {
-  const groups: TimelineYearGroup[] = [];
+function buildTimelineSegments(
+  range: TimelineRange,
+  mode: "year" | "quarter" | "month" | "week" | "day",
+): TimelineSegment[] {
+  const segments: TimelineSegment[] = [];
+  let cursor = startOfDay(range.start);
 
-  for (const month of months) {
-    const year = String(month.start.getFullYear());
-    const current = groups[groups.length - 1];
-    if (current?.label === year) {
-      current.span += 1;
-      continue;
+  while (cursor <= range.end) {
+    let segmentStart = cursor;
+    let segmentEnd = cursor;
+    let label = "";
+
+    if (mode === "year") {
+      segmentStart = new Date(cursor.getFullYear(), 0, 1);
+      segmentEnd = new Date(cursor.getFullYear(), 11, 31);
+      label = String(cursor.getFullYear());
+    } else if (mode === "quarter") {
+      segmentStart = startOfQuarter(cursor);
+      segmentEnd = endOfQuarter(cursor);
+      label = `Q${Math.floor(cursor.getMonth() / 3) + 1}`;
+    } else if (mode === "month") {
+      segmentStart = startOfMonth(cursor);
+      segmentEnd = endOfMonth(cursor);
+      label = formatMonthLabel(cursor).toUpperCase();
+    } else if (mode === "week") {
+      segmentStart = startOfWeek(cursor);
+      segmentEnd = endOfWeek(cursor);
+      label = `W${Math.ceil((getDaysDiff(new Date(cursor.getFullYear(), 0, 1), cursor) + 1) / 7)}`;
+    } else {
+      segmentStart = startOfDay(cursor);
+      segmentEnd = startOfDay(cursor);
+      label = String(cursor.getDate()).padStart(2, "0");
     }
 
-    groups.push({ key: year, label: year, span: 1 });
+    const clampedStart =
+      segmentStart < range.start ? range.start : segmentStart;
+    const clampedEnd = segmentEnd > range.end ? range.end : segmentEnd;
+    const spanDays = getDaysDiff(clampedStart, clampedEnd) + 1;
+
+    segments.push({
+      key: `${mode}-${clampedStart.toISOString()}`,
+      label,
+      spanDays,
+    });
+
+    cursor = addDays(clampedEnd, 1);
   }
 
-  return groups;
-}
-
-function endOfMonth(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0);
+  return segments;
 }
 
 function formatDateInput(date: Date): string {
@@ -514,43 +613,50 @@ function InlineSelect({
   );
 }
 
-function TimelineHeader({ months }: { months: TimelineMonth[] }) {
-  const yearGroups = buildTimelineYears(months);
+function TimelineHeader({
+  range,
+  scale,
+  dayWidth,
+}: {
+  range: TimelineRange;
+  scale: TimelineScale;
+  dayWidth: number;
+}) {
+  const topSegments = useMemo(
+    () => buildTimelineSegments(range, "year"),
+    [range],
+  );
+  const bottomSegments = useMemo(
+    () => buildTimelineSegments(range, scale === "year" ? "quarter" : scale),
+    [range, scale],
+  );
 
   return (
-    <div className="border-l border-slate-200">
-      <div
-        className="grid border-b border-slate-200"
-        style={{
-          gridTemplateColumns: `repeat(${months.length}, minmax(72px, 1fr))`,
-        }}
-      >
-        {yearGroups.map((yearGroup) => (
+    <div
+      className="border-l border-slate-200"
+      style={{ width: range.totalDays * dayWidth }}
+    >
+      <div className="flex border-b border-slate-200">
+        {topSegments.map((segment) => (
           <div
-            key={yearGroup.key}
-            className="flex h-9 items-center justify-center border-l border-slate-200 bg-slate-100 px-2 text-[11px] font-semibold uppercase tracking-[0.22em] whitespace-nowrap text-slate-500"
-            style={{
-              gridColumn: `span ${yearGroup.span} / span ${yearGroup.span}`,
-            }}
+            key={segment.key}
+            className="flex h-9 items-center justify-center border-l border-slate-200 bg-slate-100 px-2 text-[11px] font-semibold uppercase tracking-[0.22em] whitespace-nowrap text-slate-500 first:border-l-0"
+            style={{ width: segment.spanDays * dayWidth }}
           >
-            {yearGroup.label}
+            {segment.label}
           </div>
         ))}
       </div>
-      <div
-        className="grid"
-        style={{
-          gridTemplateColumns: `repeat(${months.length}, minmax(72px, 1fr))`,
-        }}
-      >
-        {months.map((month, index) => (
+      <div className="flex">
+        {bottomSegments.map((segment, index) => (
           <div
-            key={month.key}
-            className={`flex h-11 items-center justify-center border-l border-slate-200 px-2 text-center text-xs font-semibold uppercase tracking-[0.18em] whitespace-nowrap text-slate-500 ${
+            key={segment.key}
+            className={`flex h-11 items-center justify-center border-l border-slate-200 px-2 text-center text-xs font-semibold uppercase tracking-[0.18em] whitespace-nowrap text-slate-500 first:border-l-0 ${
               index % 2 === 0 ? "bg-slate-50" : "bg-white"
             }`}
+            style={{ width: segment.spanDays * dayWidth }}
           >
-            {month.label}
+            {segment.label}
           </div>
         ))}
       </div>
@@ -560,14 +666,18 @@ function TimelineHeader({ months }: { months: TimelineMonth[] }) {
 
 function TimelineRow({
   item,
-  months,
+  range,
+  scale,
+  dayWidth,
   placement,
   theme,
   onResizeStart,
 }: {
   item: ReportingProgrammeItem;
-  months: TimelineMonth[];
-  placement: { start: number; span: number } | null;
+  range: TimelineRange;
+  scale: TimelineScale;
+  dayWidth: number;
+  placement: { left: number; width: number } | null;
   theme: SectionTheme;
   onResizeStart: (
     event: React.PointerEvent<HTMLButtonElement>,
@@ -577,31 +687,33 @@ function TimelineRow({
   ) => void;
 }) {
   const rowRef = useRef<HTMLDivElement | null>(null);
-  const left = placement
-    ? `${((placement.start - 1) / months.length) * 100}%`
-    : "0%";
-  const width = placement ? `${(placement.span / months.length) * 100}%` : "0%";
+  const segments = useMemo(
+    () => buildTimelineSegments(range, scale === "year" ? "quarter" : scale),
+    [range, scale],
+  );
 
   return (
-    <div ref={rowRef} className="relative h-21 overflow-hidden">
-      <div
-        className="grid h-full"
-        style={{
-          gridTemplateColumns: `repeat(${months.length}, minmax(72px, 1fr))`,
-        }}
-      >
-        {months.map((month, index) => (
+    <div
+      ref={rowRef}
+      className="relative h-21 overflow-hidden"
+      style={{ width: range.totalDays * dayWidth }}
+    >
+      <div className="flex h-full">
+        {segments.map((segment, index) => (
           <div
-            key={month.key}
-            className={`border-l border-slate-200 ${index % 2 === 0 ? "bg-slate-50/80" : "bg-white"}`}
+            key={segment.key}
+            className={`h-full border-l border-slate-200 first:border-l-0 ${
+              index % 2 === 0 ? "bg-slate-50/80" : "bg-white"
+            }`}
+            style={{ width: segment.spanDays * dayWidth }}
           />
         ))}
       </div>
       {placement ? (
-        <div className="absolute inset-0 px-2">
+        <div className="absolute inset-0">
           <div
             className={`absolute top-1/2 h-11 -translate-y-1/2 rounded-full ${theme.railClass}`}
-            style={{ left, width }}
+            style={{ left: placement.left, width: placement.width }}
           >
             <div
               className={`absolute inset-x-1.5 top-1/2 h-7 -translate-y-1/2 rounded-full bg-linear-to-r ${theme.barClass} shadow-sm`}
@@ -651,29 +763,56 @@ function ProjectLocationMap({
     () => points.filter((point) => isPointInBounds(point, bounds)),
     [bounds, points],
   );
+  const mapRef = useRef<HTMLDivElement | null>(null);
 
-  function focusViewportFromInteraction(
-    clientX: number,
-    clientY: number,
-    container: HTMLDivElement,
-    nextZoom: number,
-  ) {
-    const rect = container.getBoundingClientRect();
-    const x = clamp((clientX - rect.left) / rect.width, 0, 1);
-    const y = clamp((clientY - rect.top) / rect.height, 0, 1);
-    const focusLng = bounds.minLng + x * (bounds.maxLng - bounds.minLng);
-    const focusLat = bounds.maxLat - y * (bounds.maxLat - bounds.minLat);
-    const latSpan = (MAP_MAX_LAT - MAP_MIN_LAT) / nextZoom;
-    const lngSpan = (MAP_MAX_LNG - MAP_MIN_LNG) / nextZoom;
+  const focusViewportFromInteraction = useCallback(
+    (
+      clientX: number,
+      clientY: number,
+      container: HTMLDivElement,
+      nextZoom: number,
+    ) => {
+      const rect = container.getBoundingClientRect();
+      const x = clamp((clientX - rect.left) / rect.width, 0, 1);
+      const y = clamp((clientY - rect.top) / rect.height, 0, 1);
+      const focusLng = bounds.minLng + x * (bounds.maxLng - bounds.minLng);
+      const focusLat = bounds.maxLat - y * (bounds.maxLat - bounds.minLat);
+      const latSpan = (MAP_MAX_LAT - MAP_MIN_LAT) / nextZoom;
+      const lngSpan = (MAP_MAX_LNG - MAP_MIN_LNG) / nextZoom;
 
-    onViewportChange(
-      clampViewport({
-        centerLat: focusLat + (y - 0.5) * latSpan,
-        centerLng: focusLng - (x - 0.5) * lngSpan,
-        zoom: nextZoom,
-      }),
-    );
-  }
+      onViewportChange(
+        clampViewport({
+          centerLat: focusLat + (y - 0.5) * latSpan,
+          centerLng: focusLng - (x - 0.5) * lngSpan,
+          zoom: nextZoom,
+        }),
+      );
+    },
+    [bounds, onViewportChange],
+  );
+
+  useEffect(() => {
+    const container = mapRef.current;
+    if (!container) return;
+    const mapElement = container;
+
+    function handleWheel(event: WheelEvent) {
+      event.preventDefault();
+      event.stopPropagation();
+      const deltaSource = event.ctrlKey ? event.deltaY / 40 : event.deltaY;
+      const delta = deltaSource < 0 ? 0.35 : -0.35;
+      const nextZoom = clamp(viewport.zoom + delta, 1, 5);
+      focusViewportFromInteraction(
+        event.clientX,
+        event.clientY,
+        mapElement,
+        nextZoom,
+      );
+    }
+
+    mapElement.addEventListener("wheel", handleWheel, { passive: false });
+    return () => mapElement.removeEventListener("wheel", handleWheel);
+  }, [focusViewportFromInteraction, viewport.zoom]);
 
   return (
     <div className="rounded-4xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -681,32 +820,48 @@ function ProjectLocationMap({
         <div>
           <h3 className="text-lg font-semibold text-slate-950">Project map</h3>
           <p className="mt-1 text-sm text-slate-500">
-            Placeholder county locations based on the site-code prefix. Zooming
-            filters the list to projects inside the current view.
+            Ireland placeholder view using county-based positions from the
+            site-code prefix. Zooming filters the list to projects inside the
+            current view.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => onViewportChange(DEFAULT_MAP_VIEWPORT)}
-          className="rounded-full border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
-        >
-          Reset view
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() =>
+              onViewportChange(
+                clampViewport({ ...viewport, zoom: viewport.zoom - 0.4 }),
+              )
+            }
+            className="rounded-full border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+          >
+            −
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              onViewportChange(
+                clampViewport({ ...viewport, zoom: viewport.zoom + 0.4 }),
+              )
+            }
+            className="rounded-full border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            onClick={() => onViewportChange(DEFAULT_MAP_VIEWPORT)}
+            className="rounded-full border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+          >
+            Reset view
+          </button>
+        </div>
       </div>
 
       <div
-        className="relative h-140 overflow-hidden rounded-4xl border border-slate-200 bg-linear-to-br from-slate-100 via-emerald-50 to-cyan-50"
-        onWheel={(event) => {
-          event.preventDefault();
-          const delta = event.deltaY < 0 ? 0.4 : -0.4;
-          const nextZoom = clamp(viewport.zoom + delta, 1, 5);
-          focusViewportFromInteraction(
-            event.clientX,
-            event.clientY,
-            event.currentTarget,
-            nextZoom,
-          );
-        }}
+        ref={mapRef}
+        className="relative h-140 overflow-hidden rounded-4xl border border-slate-200 bg-linear-to-br from-slate-100 via-emerald-50 to-cyan-50 overscroll-contain touch-none"
+        style={{ touchAction: "none" }}
         onClick={(event) => {
           focusViewportFromInteraction(
             event.clientX,
@@ -716,8 +871,26 @@ function ProjectLocationMap({
           );
         }}
       >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(2,84,55,0.08),transparent_45%),linear-gradient(to_right,rgba(148,163,184,0.18)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.18)_1px,transparent_1px)] bg-size-[auto,20%,20%]" />
-        <div className="absolute left-[14%] top-[10%] h-[78%] w-[70%] rounded-[45%_55%_42%_58%/38%_35%_65%_62%] border border-white/80 bg-white/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(2,84,55,0.08),transparent_45%),linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)] bg-size-[auto,16%,16%]" />
+        <svg
+          viewBox="0 0 100 140"
+          className="absolute inset-0 h-full w-full"
+          aria-hidden="true"
+          preserveAspectRatio="xMidYMid meet"
+        >
+          <path
+            d="M26 17 L34 10 L45 11 L53 16 L61 15 L70 24 L75 36 L78 50 L75 64 L80 77 L76 92 L68 103 L60 110 L58 121 L47 130 L36 127 L30 118 L22 114 L16 101 L12 89 L15 76 L13 63 L17 50 L15 39 L20 28 Z"
+            fill="rgba(255,255,255,0.72)"
+            stroke="rgba(2,84,55,0.24)"
+            strokeWidth="1.5"
+          />
+          <path
+            d="M64 18 L71 17 L77 21 L80 27 L77 33 L70 35 L65 31 L63 24 Z"
+            fill="rgba(255,255,255,0.68)"
+            stroke="rgba(2,84,55,0.22)"
+            strokeWidth="1.2"
+          />
+        </svg>
 
         {visiblePoints.map((point) => {
           const position = getMapPointPosition(point, bounds);
@@ -762,7 +935,8 @@ function ProjectLocationMap({
         <div className="absolute left-4 top-4 rounded-2xl bg-white/90 px-3 py-2 text-xs text-slate-600 shadow-sm backdrop-blur">
           Zoom {viewport.zoom.toFixed(1)}×
           <div className="mt-1 text-[11px] text-slate-500">
-            Click to re-centre · wheel to zoom · double-click a marker to open
+            Pinch or wheel inside map to zoom · click to re-centre ·
+            double-click marker to open
           </div>
         </div>
         <div className="absolute bottom-4 right-4 rounded-2xl bg-white/90 px-3 py-2 text-xs text-slate-600 shadow-sm backdrop-blur">
@@ -792,6 +966,7 @@ export function ProjectIndexPage() {
   const [validation, setValidation] = useState<ValidationState>({});
   const [mapViewport, setMapViewport] =
     useState<MapViewport>(DEFAULT_MAP_VIEWPORT);
+  const [timelineScale, setTimelineScale] = useState<TimelineScale>("month");
   const [timelineDragState, setTimelineDragState] =
     useState<TimelineDragState | null>(null);
   const workspaceRef = useRef<ProjectIndexWorkspace | null>(null);
@@ -923,10 +1098,13 @@ export function ProjectIndexPage() {
     [workspace?.reportingProgramme],
   );
 
-  const timelineMonths = useMemo(
-    () => buildTimelineMonths(workspace?.reportingProgramme ?? []),
+  const timelineRange = useMemo(
+    () => buildTimelineRange(workspace?.reportingProgramme ?? []),
     [workspace?.reportingProgramme],
   );
+
+  const timelineDayWidth = TIMELINE_DAY_WIDTH[timelineScale];
+  const timelineWidth = timelineRange.totalDays * timelineDayWidth;
 
   useEffect(() => {
     if (!timelineDragState) return;
@@ -934,16 +1112,13 @@ export function ProjectIndexPage() {
     const dragState = timelineDragState;
 
     function updateDraggedDate(clientX: number) {
-      const monthIndex = clamp(
-        Math.floor(
-          ((clientX - dragState.rowLeft) / dragState.rowWidth) *
-            timelineMonths.length,
-        ),
+      const dayIndex = clamp(
+        Math.round((clientX - dragState.rowLeft) / dragState.dayWidth),
         0,
-        Math.max(0, timelineMonths.length - 1),
+        Math.max(0, timelineRange.totalDays - 1),
       );
-      const targetMonth = timelineMonths[monthIndex];
-      if (!targetMonth) return;
+      const targetDate = addDays(timelineRange.start, dayIndex);
+      const nextValue = formatDateInput(targetDate);
 
       setWorkspace((current) => {
         if (!current) return current;
@@ -955,18 +1130,16 @@ export function ProjectIndexPage() {
 
             const startDate = item.startDate || item.endDate;
             const endDate = item.endDate || item.startDate;
-            const nextStart = formatDateInput(startOfMonth(targetMonth.start));
-            const nextEnd = formatDateInput(endOfMonth(targetMonth.start));
 
             if (dragState.edge === "start") {
               const safeEnd =
-                endDate && nextStart > endDate ? nextStart : endDate;
-              return { ...item, startDate: nextStart, endDate: safeEnd };
+                endDate && nextValue > endDate ? nextValue : endDate;
+              return { ...item, startDate: nextValue, endDate: safeEnd };
             }
 
             const safeStart =
-              startDate && nextEnd < startDate ? nextEnd : startDate;
-            return { ...item, startDate: safeStart, endDate: nextEnd };
+              startDate && nextValue < startDate ? nextValue : startDate;
+            return { ...item, startDate: safeStart, endDate: nextValue };
           }),
         };
       });
@@ -1027,7 +1200,7 @@ export function ProjectIndexPage() {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
     };
-  }, [timelineDragState, timelineMonths, user?.email]);
+  }, [timelineDragState, timelineRange, user?.email]);
 
   function openProject(projectGuid: string) {
     navigate(`/project-index/${projectGuid}`);
@@ -1039,7 +1212,8 @@ export function ProjectIndexPage() {
     edge: "start" | "end",
     rowElement: HTMLDivElement | null,
   ) {
-    if (!item.isEditable || !rowElement || timelineMonths.length === 0) return;
+    if (!item.isEditable || !rowElement || timelineRange.totalDays === 0)
+      return;
 
     event.preventDefault();
     event.stopPropagation();
@@ -1049,7 +1223,7 @@ export function ProjectIndexPage() {
       itemId: item.id,
       edge,
       rowLeft: rect.left,
-      rowWidth: rect.width,
+      dayWidth: rect.width / timelineRange.totalDays,
     });
   }
 
@@ -2096,9 +2270,27 @@ export function ProjectIndexPage() {
                       colour-coded gantt bars.
                     </p>
                   </div>
-                  <div className="text-sm text-slate-500">
-                    Dates drive the timeline directly. Duration is calculated
-                    automatically.
+                  <div className="flex flex-col items-start gap-3 xl:items-end">
+                    <div className="text-sm text-slate-500">
+                      Dates drive the timeline directly. Duration is calculated
+                      automatically.
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {TIMELINE_SCALE_ORDER.map((scaleOption) => (
+                        <button
+                          key={scaleOption}
+                          type="button"
+                          onClick={() => setTimelineScale(scaleOption)}
+                          className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                            timelineScale === scaleOption
+                              ? "bg-[#025437] text-white"
+                              : "border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                          }`}
+                        >
+                          {TIMELINE_SCALE_LABELS[scaleOption]}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -2247,10 +2439,14 @@ export function ProjectIndexPage() {
                       })}
                     </div>
 
-                    <div className="min-w-0 flex-1 overflow-x-auto bg-white">
-                      <div style={{ minWidth: TIMELINE_MIN_WIDTH }}>
+                    <div className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden bg-white">
+                      <div style={{ width: timelineWidth }}>
                         <div className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          <TimelineHeader months={timelineMonths} />
+                          <TimelineHeader
+                            range={timelineRange}
+                            scale={timelineScale}
+                            dayWidth={timelineDayWidth}
+                          />
                         </div>
 
                         {reportingSections.map((section) => {
@@ -2260,11 +2456,13 @@ export function ProjectIndexPage() {
                             <Fragment key={section.sectionCode}>
                               <div
                                 className={`h-12 border-b border-slate-200 ${theme.headerClass}`}
+                                style={{ width: timelineWidth }}
                               />
                               {section.items.map((item) => {
                                 const placement = getTimelinePlacement(
                                   item,
-                                  timelineMonths,
+                                  timelineRange,
+                                  timelineDayWidth,
                                 );
 
                                 return (
@@ -2274,7 +2472,9 @@ export function ProjectIndexPage() {
                                   >
                                     <TimelineRow
                                       item={item}
-                                      months={timelineMonths}
+                                      range={timelineRange}
+                                      scale={timelineScale}
+                                      dayWidth={timelineDayWidth}
                                       placement={placement}
                                       theme={theme}
                                       onResizeStart={beginTimelineResize}

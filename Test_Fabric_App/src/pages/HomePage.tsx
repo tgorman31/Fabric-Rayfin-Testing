@@ -164,11 +164,11 @@ function HistoryTreeNode({
         onClick={() => onSelect(node.guid)}
         className={`w-full rounded-xl border p-4 text-left transition ${
           isSelected
-            ? "border-blue-600 bg-blue-50 shadow-sm"
+            ? "border-[#006838] bg-[#f1f8f4] shadow-sm"
             : isMatched
-              ? "border-blue-300 bg-blue-50/60"
+              ? "border-[#8fb73e] bg-[#f7fbf8]"
               : isAncestor
-                ? "border-sky-300 bg-sky-50/50"
+                ? "border-emerald-200 bg-emerald-50/60"
                 : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50"
         }`}
       >
@@ -200,7 +200,7 @@ function HistoryTreeNode({
             </p>
           </div>
           {isMatched && (
-            <span className="rounded-full bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white">
+            <span className="rounded-full bg-[#025437] px-2.5 py-1 text-xs font-semibold text-white">
               Match
             </span>
           )}
@@ -428,66 +428,68 @@ export function HomePage() {
       : treeOrderedHistoryNodes;
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-950">
+    <div className="min-h-screen bg-[#f3f6f3] text-slate-950">
       {successMessage && (
         <div
           role="status"
-          className="fixed right-6 top-6 z-10 max-w-xl rounded-lg bg-green-600 px-5 py-3 text-sm font-medium text-white shadow-lg"
+          className="fixed right-6 top-6 z-30 max-w-xl rounded-2xl bg-[#006838] px-5 py-3 text-sm font-medium text-white shadow-lg"
         >
           {successMessage}
         </div>
       )}
 
-      <header className="flex items-center justify-between border-b border-gray-200 bg-white px-8 py-5">
-        <div>
-          <p className="text-sm font-medium text-blue-600">Fabric Rayfin</p>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Project Register
-          </h1>
-        </div>
-        <div className="flex items-center gap-3">
-          <Link
-            to="/apps"
-            className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-100 hover:text-gray-900"
-            aria-label="Back to app launcher"
-          >
-            <span
-              className="grid grid-cols-3 gap-0.5 text-current"
-              aria-hidden="true"
+      <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/92 backdrop-blur">
+        <div className="flex w-full items-center justify-between gap-4 px-6 py-4 lg:px-8 xl:px-10">
+          <div className="flex items-center gap-4">
+            <div>
+              <p className="text-sm font-semibold text-[#006838]">
+                Project Register
+              </p>
+              <h1 className="text-[2rem] font-semibold tracking-tight">
+                Register workspace
+              </h1>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <Link
+              to="/apps"
+              className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 transition hover:border-[#8fb73e] hover:text-[#025437]"
+              aria-label="Open app launcher"
             >
-              {Array.from({ length: 9 }, (_, index) => (
-                <span
-                  key={index}
-                  className="h-1.5 w-1.5 rounded-full bg-current"
-                />
-              ))}
-            </span>
-            Apps
-          </Link>
-          {user && (
-            <span className="hidden text-sm text-gray-500 sm:inline">
-              Signed in as {user.email}
-            </span>
-          )}
-          <button
-            onClick={() => void signOut()}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-100 hover:text-gray-900"
-            aria-label="Sign out"
-          >
-            Sign out
-          </button>
+              <span className="grid grid-cols-3 gap-1" aria-hidden="true">
+                {Array.from({ length: 9 }, (_, index) => (
+                  <span
+                    key={index}
+                    className="h-1.5 w-1.5 rounded-full bg-current"
+                  />
+                ))}
+              </span>
+            </Link>
+            {user && (
+              <span className="hidden text-sm text-slate-500 lg:inline">
+                {user.email}
+              </span>
+            )}
+            <button
+              onClick={() => void signOut()}
+              className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+              aria-label="Sign out"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
 
-      <main className="mx-auto flex max-w-6xl flex-col px-6 py-16">
-        <div className="mb-6 flex rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
+      <main className="mx-auto flex w-full max-w-7xl flex-col px-6 py-8 lg:px-8 xl:px-10">
+        <div className="mb-6 flex rounded-3xl border border-white/70 bg-white p-1 shadow-sm">
           <button
             type="button"
             onClick={() => switchTab("create")}
             className={`flex-1 rounded-lg px-4 py-2 text-sm font-semibold transition ${
               activeTab === "create"
-                ? "bg-blue-600 text-white shadow-sm"
-                : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                ? "bg-[#025437] text-white shadow-sm"
+                : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
             }`}
           >
             Create Project
@@ -497,8 +499,8 @@ export function HomePage() {
             onClick={() => switchTab("split")}
             className={`flex-1 rounded-lg px-4 py-2 text-sm font-semibold transition ${
               activeTab === "split"
-                ? "bg-blue-600 text-white shadow-sm"
-                : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                ? "bg-[#025437] text-white shadow-sm"
+                : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
             }`}
           >
             Split Project
@@ -508,8 +510,8 @@ export function HomePage() {
             onClick={() => switchTab("history")}
             className={`flex-1 rounded-lg px-4 py-2 text-sm font-semibold transition ${
               activeTab === "history"
-                ? "bg-blue-600 text-white shadow-sm"
-                : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                ? "bg-[#025437] text-white shadow-sm"
+                : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
             }`}
           >
             Project History
@@ -517,7 +519,7 @@ export function HomePage() {
         </div>
 
         {activeTab === "create" ? (
-          <section className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
+          <section className="rounded-4xl border border-white/70 bg-white p-8 shadow-sm">
             <div className="mb-8">
               <h2 className="text-xl font-semibold">New project</h2>
               <p className="mt-2 text-sm text-gray-500">
@@ -544,7 +546,7 @@ export function HomePage() {
                   placeholder="D012"
                   autoComplete="off"
                   maxLength={5}
-                  className="mt-2 block w-full rounded-lg border border-gray-300 px-4 py-3 text-base uppercase tracking-wide shadow-sm outline-none transition placeholder:normal-case placeholder:tracking-normal focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  className="mt-2 block w-full rounded-lg border border-gray-300 px-4 py-3 text-base uppercase tracking-wide shadow-sm outline-none transition placeholder:normal-case placeholder:tracking-normal focus:border-[#006838] focus:ring-4 focus:ring-[#8fb73e]/20"
                   aria-describedby="site-code-help create-error"
                   aria-invalid={error ? true : undefined}
                 />
@@ -567,14 +569,14 @@ export function HomePage() {
               <button
                 type="submit"
                 disabled={submitting || !siteCode.trim()}
-                className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                className="inline-flex items-center justify-center rounded-2xl bg-[#025437] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#01462e] disabled:cursor-not-allowed disabled:bg-slate-300"
               >
                 {submitting ? "Creating project..." : "Create project"}
               </button>
             </form>
           </section>
         ) : activeTab === "split" ? (
-          <section className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
+          <section className="rounded-4xl border border-white/70 bg-white p-8 shadow-sm">
             <div className="mb-8">
               <h2 className="text-xl font-semibold">Split project</h2>
               <p className="mt-2 text-sm text-gray-500">
@@ -601,7 +603,7 @@ export function HomePage() {
                   placeholder="D012-01"
                   autoComplete="off"
                   maxLength={20}
-                  className="mt-2 block w-full rounded-lg border border-gray-300 px-4 py-3 text-base uppercase tracking-wide shadow-sm outline-none transition placeholder:normal-case placeholder:tracking-normal focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  className="mt-2 block w-full rounded-lg border border-gray-300 px-4 py-3 text-base uppercase tracking-wide shadow-sm outline-none transition placeholder:normal-case placeholder:tracking-normal focus:border-[#006838] focus:ring-4 focus:ring-[#8fb73e]/20"
                   aria-describedby="project-ref-help split-error"
                   aria-invalid={error ? true : undefined}
                 />
@@ -674,7 +676,7 @@ export function HomePage() {
                     onChange={(event) =>
                       setTotalContractSplits(event.target.value)
                     }
-                    className="mt-2 block w-40 rounded-lg border border-gray-300 px-4 py-3 text-base shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                    className="mt-2 block w-40 rounded-lg border border-gray-300 px-4 py-3 text-base shadow-sm outline-none transition focus:border-[#006838] focus:ring-4 focus:ring-[#8fb73e]/20"
                   />
                   <p className="mt-2 text-sm text-gray-500">
                     Enter the total number of contract refs required. Existing
@@ -696,7 +698,7 @@ export function HomePage() {
               <button
                 type="submit"
                 disabled={submitting || !projectRef.trim()}
-                className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                className="inline-flex items-center justify-center rounded-2xl bg-[#025437] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#01462e] disabled:cursor-not-allowed disabled:bg-slate-300"
               >
                 {submitting ? "Splitting project..." : "Split project"}
               </button>
@@ -704,7 +706,7 @@ export function HomePage() {
           </section>
         ) : (
           <section className="space-y-6">
-            <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
+            <div className="rounded-4xl border border-white/70 bg-white p-8 shadow-sm">
               <div className="mb-8">
                 <h2 className="text-xl font-semibold">Project history</h2>
                 <p className="mt-2 text-sm text-gray-500">
@@ -731,7 +733,7 @@ export function HomePage() {
                     placeholder="D012 or D012-01-01"
                     autoComplete="off"
                     maxLength={20}
-                    className="mt-2 block w-full rounded-lg border border-gray-300 px-4 py-3 text-base uppercase tracking-wide shadow-sm outline-none transition placeholder:normal-case placeholder:tracking-normal focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                    className="mt-2 block w-full rounded-lg border border-gray-300 px-4 py-3 text-base uppercase tracking-wide shadow-sm outline-none transition placeholder:normal-case placeholder:tracking-normal focus:border-[#006838] focus:ring-4 focus:ring-[#8fb73e]/20"
                     aria-describedby="history-query-help history-error"
                     aria-invalid={error ? true : undefined}
                   />
@@ -757,7 +759,7 @@ export function HomePage() {
                 <button
                   type="submit"
                   disabled={submitting || !historyQuery.trim()}
-                  className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+                  className="inline-flex items-center justify-center rounded-2xl bg-[#025437] px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#01462e] disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
                   {submitting ? "Loading history..." : "View history"}
                 </button>
@@ -767,7 +769,7 @@ export function HomePage() {
             {historyResult && (
               <>
                 <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
-                  <section className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
+                  <section className="rounded-4xl border border-white/70 bg-white p-8 shadow-sm">
                     <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
                       <div>
                         <h3 className="text-lg font-semibold text-gray-950">
@@ -801,7 +803,7 @@ export function HomePage() {
                     </ul>
                   </section>
 
-                  <aside className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
+                  <aside className="rounded-4xl border border-white/70 bg-white p-8 shadow-sm">
                     <h3 className="text-lg font-semibold text-gray-950">
                       Selected node
                     </h3>
@@ -886,7 +888,7 @@ export function HomePage() {
                   </aside>
                 </div>
 
-                <section className="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
+                <section className="rounded-4xl border border-white/70 bg-white p-8 shadow-sm">
                   <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
                     <div>
                       <h3 className="text-lg font-semibold text-gray-950">
@@ -902,8 +904,8 @@ export function HomePage() {
                         onClick={() => setHistorySortMode("tree")}
                         className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
                           historySortMode === "tree"
-                            ? "bg-blue-600 text-white"
-                            : "text-gray-600 hover:bg-white hover:text-gray-900"
+                            ? "bg-[#025437] text-white"
+                            : "text-slate-600 hover:bg-white hover:text-slate-950"
                         }`}
                       >
                         Tree order
@@ -913,8 +915,8 @@ export function HomePage() {
                         onClick={() => setHistorySortMode("chronological")}
                         className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
                           historySortMode === "chronological"
-                            ? "bg-blue-600 text-white"
-                            : "text-gray-600 hover:bg-white hover:text-gray-900"
+                            ? "bg-[#025437] text-white"
+                            : "text-slate-600 hover:bg-white hover:text-slate-950"
                         }`}
                       >
                         Chronological
@@ -946,7 +948,7 @@ export function HomePage() {
                             <tr
                               key={node.guid}
                               className={`cursor-pointer transition hover:bg-gray-50 ${
-                                isSelected ? "bg-blue-50" : ""
+                                isSelected ? "bg-[#f1f8f4]" : ""
                               }`}
                               onClick={() => setSelectedHistoryGuid(node.guid)}
                             >
@@ -954,7 +956,7 @@ export function HomePage() {
                                 <div className="flex items-center gap-2">
                                   <span>{node.projectRef}</span>
                                   {isMatched && (
-                                    <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[11px] font-semibold text-white">
+                                    <span className="rounded-full bg-[#025437] px-2 py-0.5 text-[11px] font-semibold text-white">
                                       Match
                                     </span>
                                   )}
