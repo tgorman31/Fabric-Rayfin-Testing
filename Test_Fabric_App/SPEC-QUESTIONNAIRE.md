@@ -19,7 +19,22 @@ This file now acts as a compact decision register and outstanding-question list 
 - Search supports:
   - `project_ref`
   - `site_code`
+- default list view is active/current projects only
+- a `Show History` toggle should expose historical rows
+- default visible list columns should include:
+  - `Project Ref`
+  - `Project Name`
+  - `Site Code`
+  - `Gateway`
+  - `Reporting Stage`
+  - `Project Status`
+  - `Reporting Status`
+  - `Responsible Manager`
+  - `Last Updated`
 - Historical refs should let the user **choose** what to do
+- preferred behavior is to show the historical record with actions such as:
+  - `Open current`
+  - `Open historical`
 
 ## 2. Permissions and access
 - Long term, Register access should likely use **Entra group** membership
@@ -28,12 +43,17 @@ This file now acts as a compact decision register and outstanding-question list 
 - For now, all signed-in users can edit Project Index
 - No tab-level read-only split is required for now
 - Audit/update history is wanted for edit tables
+- if a project is open in multiple sessions, v1 should show a **currently being edited by X** indicator rather than lock the record
 
 ## 3. First implementation scope
 - Desired target is the **full Project Index scope**
 - If practical phasing is needed, a narrower first slice is acceptable
 - Placeholder tabs may still appear from day one
-- `Admin` tab is required for approved users to maintain dropdown/reference values
+- preferred first delivered build slice is:
+  - shell
+  - `Project Information`
+  - basic `Reporting Programme`
+- admin/reference maintenance is required, but should exist as a **global app admin area** rather than a project-level tab
 
 ## 4. Project Information
 ### Summary/header
@@ -62,6 +82,8 @@ This file now acts as a compact decision register and outstanding-question list 
 - rows can be added/removed freely
 - `Staff Role`: dropdown
 - `Team`: dropdown
+- prefer search against directory / Entra
+- if that is unavailable or incomplete, fall back to free text
 - history handled downstream rather than in-app
 
 ### Facilities
@@ -244,6 +266,9 @@ This file now acts as a compact decision register and outstanding-question list 
 - do not literally mimic yellow Excel cells
 - use standard web UI indicators for editability
 - timeline/gantt should be modern planner-style
+- top-level navigation should feel closer to a **Microsoft 365-style app launcher/menu**
+- inside `Project Index`, start with a **hybrid** navigation model
+- v1 save behavior should be **auto-save field by field**
 - primary brand colors:
   - Dark Green: `#025437`
   - Middle Green: `#006838`
@@ -262,7 +287,6 @@ This file now acts as a compact decision register and outstanding-question list 
 ## Project Information
 - exact parsing rule for planning/contract codes
 - are `Site Name` and `Public Name` both mandatory?
-- should `Staff Username` be free text or directory-backed?
 - can the same person appear multiple times in different roles?
 
 ## Reporting Programme
@@ -293,3 +317,4 @@ This file now acts as a compact decision register and outstanding-question list 
 - future board-report export format priority
 - print/export visual fidelity expectations
 - v1 gantt drag/drop vs visual-first behavior
+- exact preferred shape of the Microsoft 365-style launcher/menu in this app context

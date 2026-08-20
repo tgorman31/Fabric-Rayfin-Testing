@@ -103,8 +103,23 @@ Confirmed direction:
 - the list should support search/filter by:
   - `project_ref`
   - `site_code`
+- default view should show **active/current projects only**
+- users should have a **Show History** toggle to include historical records
+- default visible columns should include:
+  - `Project Ref`
+  - `Project Name`
+  - `Site Code`
+  - `Gateway`
+  - `Reporting Stage`
+  - `Project Status`
+  - `Reporting Status`
+  - `Responsible Manager`
+  - `Last Updated`
 - longer term, that list may be filtered to a user's projects
 - if a historical project ref is involved, the user should be able to **choose** what to do
+- preferred historical-ref behavior is to show the historical record with actions such as:
+  - `Open current`
+  - `Open historical`
 
 ### Top-level tabs
 
@@ -118,10 +133,19 @@ Confirmed direction:
 ### Admin
 
 Confirmed direction:
-- there should be an `Admin` tab in Project Index
+- there should be a **global app Admin area** rather than project-specific admin
 - approved users should be able to maintain dropdown/reference options there
+- there are no confirmed project-specific reference lists at present
 
 ### Shared shell
+
+Confirmed direction:
+- top-level app navigation should feel closer to a **Microsoft 365-style app launcher/menu** with `Project Register` and `Project Index` as distinct options
+- inside `Project Index`, use a **hybrid navigation model**:
+  - major area navigation at the top level
+  - sub-tabs within sections such as `Tenure`
+- v1 save behavior should be **auto-save field by field**
+- if the same project is open in multiple sessions, v1 should show a **currently being edited by X** style indicator rather than hard locking
 
 Common header context is expected to include:
 - `Project Ref`
@@ -199,10 +223,11 @@ Confirmed rules:
 - users may add/remove rows freely
 - `Staff Role` is a dropdown
 - `Team` is a dropdown
+- person selection should preferably use **directory / Entra-backed search**
+- if directory resolution is unavailable or incomplete, users should be able to **fall back to free text**
 - in-app historical retention is not required for now; downstream snapshotting/warehousing will handle history
 
 Remaining open items:
-- whether `Staff Username` is free text or resolved from a directory
 - whether the same person can appear multiple times in different roles
 
 ## 1.4 Facilities

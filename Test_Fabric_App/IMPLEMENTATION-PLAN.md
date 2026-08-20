@@ -93,7 +93,9 @@ Likely initial roles:
 ### UI behavior
 - unauthorized users do not see the `Project Register` nav item
 - all signed-in users can access `Project Index` in v1
-- `Admin` maintenance within Project Index should still be permission controlled
+- `Admin` should be implemented as a **global app admin area**, not a project-level tab
+- global admin maintenance should still be permission controlled
+- top-level navigation should feel closer to a **Microsoft 365-style app launcher/menu** with `Project Register` and `Project Index` as separate destinations
 
 ### Dependencies
 - access to existing sign-in identity data
@@ -118,22 +120,35 @@ Likely initial roles:
 2. Add project list/grid with:
    - search by `project_ref`
    - search by `site_code`
-   - key summary columns
+   - default columns:
+     - `Project Ref`
+     - `Project Name`
+     - `Site Code`
+     - `Gateway`
+     - `Reporting Stage`
+     - `Project Status`
+     - `Reporting Status`
+     - `Responsible Manager`
+     - `Last Updated`
    - action to open selected project
 3. Resolve project selection against `master_project_register`.
-4. Decide how historical refs are presented:
-   - either active + historical rows
-   - or active rows with an explicit history action
+4. Historical project behavior in v1:
+   - default to active/current projects only
+   - provide a `Show History` toggle
+   - when a historical ref is surfaced, show actions such as:
+     - `Open current`
+     - `Open historical`
 5. Carry selected `project_guid` through all Project Index tabs.
 
 ### Recommended data/query behavior
 - treat `master_project_register` as source of project identity
 - default the list to active/current project rows
-- expose historical lineage through a secondary action rather than cluttering the main flow
+- expose historical lineage through a `Show History` toggle and secondary actions rather than cluttering the main flow
 
 ### UI notes
 - this page is the first place to establish the new planner-style visual language
 - keep the list responsive and easy to scan on mixed device sizes
+- structure the navigation and destination selection so it feels closer to a Microsoft 365-style launcher/menu than a traditional left-nav-only app
 
 ### Exit criteria
 - users can search/select a project from a list
@@ -176,6 +191,8 @@ Likely initial roles:
   - `project_guid`
   - `person_name`
   - `staff_username` or `staff_identifier`
+  - `directory_object_id` nullable
+  - `entry_mode` (`directory`, `free_text`)
   - `staff_role_code`
   - `team_code`
   - `is_responsible_manager`
@@ -325,7 +342,9 @@ Implement as repeating editable grid with:
 ### UX notes
 - this tab should set the design system for the rest of Project Index
 - use planner-like layout discipline rather than spreadsheet visuals
-- preserve scannability with grouped cards/sections and sticky save/toolbar behavior if available
+- preserve scannability with grouped cards/sections
+- v1 should use **field-by-field auto-save** rather than explicit section save buttons where the platform allows it
+- prefer person selection via directory / Entra-backed search with free-text fallback
 
 ### Dependencies
 - reference/admin tables
@@ -361,6 +380,7 @@ Implement as repeating editable grid with:
 
 ### Recommended v1 interaction model
 - grid editing for dates and reporting values
+- field-by-field auto-save
 - gantt bars render from stored dates
 - no drag-to-edit requirement in v1 unless the underlying component is reliable and low-risk
 
@@ -594,8 +614,8 @@ For v2:
 2. Phase 2: project list and project selection
 3. Phase 3: core data model + reference tables
 4. Phase 4: Project Information
-5. Phase 8: Admin basics for required dropdowns
-6. Phase 5: Reporting Programme v1 shell + timeline
+5. Phase 5: basic Reporting Programme shell + timeline
+6. Phase 8: Admin basics for required dropdowns
 7. Phase 6: Target Programme sections
 8. Phase 7: Tenure + Block Master
 9. Construction completion/refinement if not already folded into Phase 6
@@ -717,8 +737,10 @@ The v1 release should be considered complete when:
 
 ## Immediate next implementation step
 
-Start with **Phase 1 and Phase 2 together** if capacity allows:
-- add page navigation and permission gating
-- add the Project Index landing page with project search/select
+Start with the user-preferred first slice:
+- Phase 1 app shell and permission gating
+- Phase 2 Project Index landing page with project search/select
+- Phase 4 Project Information
+- basic Phase 5 Reporting Programme shell
 
-That creates the application shell needed for all later detail tabs without risking the existing Register workflows.
+That creates the first end-to-end usable Project Index experience without risking the existing Register workflows.
