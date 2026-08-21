@@ -1,8 +1,11 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
-import { AuthPage } from '@/components/AuthPage';
-import { useAuth } from '@/hooks/AuthContext';
-import { HomePage } from '@/pages/HomePage';
+import { AuthPage } from "@/components/AuthPage";
+import { useAuth } from "@/hooks/AuthContext";
+import { useProjectRegisterAccess } from "@/hooks/useProjectRegisterAccess";
+import { AppLauncherPage } from "@/pages/AppLauncherPage";
+import { HomePage } from "@/pages/HomePage";
+import { ProjectIndexPage } from "@/pages/ProjectIndexPage";
 
 function AuthGuard({
   children,
@@ -27,10 +30,27 @@ function AuthGuard({
   return <>{children}</>;
 }
 
+function RegisterAccessGuard({ children }: { children: React.ReactNode }) {
+  const { loading, hasAccess } = useProjectRegisterAccess();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-gray-500">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!hasAccess) {
+    return <Navigate to="/apps" replace />;
+  }
+
+  return <>{children}</>;
+}
+
 function App() {
   return (
     <BrowserRouter>
-      {/* ensure all new routes require auth */}
       <Routes>
         <Route
           path="/auth"
@@ -44,7 +64,41 @@ function App() {
           path="/"
           element={
             <AuthGuard requireAuth={true}>
-              <HomePage />
+              <Navigate to="/project-index" replace />
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/apps"
+          element={
+            <AuthGuard requireAuth={true}>
+              <AppLauncherPage />
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/project-index"
+          element={
+            <AuthGuard requireAuth={true}>
+              <ProjectIndexPage />
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/project-index/:projectGuid"
+          element={
+            <AuthGuard requireAuth={true}>
+              <ProjectIndexPage />
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/project-register"
+          element={
+            <AuthGuard requireAuth={true}>
+              <RegisterAccessGuard>
+                <HomePage />
+              </RegisterAccessGuard>
             </AuthGuard>
           }
         />
