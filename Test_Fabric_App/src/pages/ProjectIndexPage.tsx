@@ -58,9 +58,12 @@ type TimelineHeaderRow = {
 
 type TimelineDragState = {
   itemId: string;
-  edge: "start" | "end";
+  mode: "resize" | "move";
+  edge?: "start" | "end";
   rowLeft: number;
   dayWidth: number;
+  grabOffsetDays?: number;
+  durationDays?: number;
 };
 
 type ReportingSectionGroup = {
@@ -141,30 +144,26 @@ const sectionThemes: Record<string, SectionTheme> = {
   },
 };
 
-const REPORTING_LEFT_GRID = "260px 72px 156px 156px 96px";
-const REPORTING_LEFT_WIDTH = 740;
+const REPORTING_LEFT_GRID = "260px 72px 168px 168px 124px";
+const REPORTING_LEFT_WIDTH = 792;
+const REPORTING_TIMELINE_GAP = 16;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const TIMELINE_DAY_WIDTH: Record<TimelineScale, number> = {
-  year: 2,
-  quarter: 4,
-  month: 8,
-  week: 16,
-  day: 28,
-};
-const TIMELINE_SCALE_ORDER: TimelineScale[] = [
-  "year",
-  "quarter",
-  "month",
-  "week",
-  "day",
+const TIMELINE_ZOOM_STEPS: Array<{
+  scale: TimelineScale;
+  dayWidth: number;
+  label: string;
+}> = [
+  { scale: "year", dayWidth: 1.5, label: "Year" },
+  { scale: "year", dayWidth: 2.25, label: "Year" },
+  { scale: "quarter", dayWidth: 3.25, label: "Quarter" },
+  { scale: "quarter", dayWidth: 4.5, label: "Quarter" },
+  { scale: "month", dayWidth: 7, label: "Month" },
+  { scale: "month", dayWidth: 9.5, label: "Month" },
+  { scale: "week", dayWidth: 14, label: "Week" },
+  { scale: "week", dayWidth: 19, label: "Week" },
+  { scale: "day", dayWidth: 26, label: "Day" },
+  { scale: "day", dayWidth: 34, label: "Day" },
 ];
-const TIMELINE_SCALE_LABELS: Record<TimelineScale, string> = {
-  year: "Year",
-  quarter: "Quarters",
-  month: "Months",
-  week: "Weeks",
-  day: "Days",
-};
 const TIMELINE_HEADER_ROW_HEIGHT = 40;
 const MAP_MIN_LAT = 51.2;
 const MAP_MAX_LAT = 55.6;
@@ -479,6 +478,14 @@ function clampDate(date: Date, min: Date, max: Date): Date {
   return new Date(clamp(date.getTime(), min.getTime(), max.getTime()));
 }
 
+
+function snapTimelineMoveDate(date: Date, scale: TimelineScale): Date {
+  if (scale === "year") return startOfQuarter(date);
+  if (scale === "quarter") return startOfMonth(date);
+  if (scale === "month") return startOfWeek(date);
+  return startOfDay(date);
+}
+
 function formatDateInput(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
@@ -708,6 +715,7 @@ function TimelineRow({
   placement,
   theme,
   onResizeStart,
+  onMoveStart,
 }: {
   item: ReportingProgrammeItem;
   range: TimelineRange;
@@ -720,6 +728,12 @@ function TimelineRow({
     item: ReportingProgrammeItem,
     edge: "start" | "end",
     rowElement: HTMLDivElement | null,
+  ) => void;
+  onMoveStart: (
+    event: React.PointerEvent<HTMLDivElement>,
+    item: ReportingProgrammeItem,
+    rowElement: HTMLDivElement | null,
+    dayWidth: number,
   ) => void;
 }) {
   const rowRef = useRef<HTMLDivElement | null>(null);
@@ -752,7 +766,12 @@ function TimelineRow({
             style={{ left: placement.left, width: placement.width }}
           >
             <div
-              className={`absolute inset-x-1.5 top-1/2 h-7 -translate-y-1/2 rounded-full bg-linear-to-r ${theme.barClass} shadow-sm`}
+              onPointerDown={(event) =>
+                item.isEditable
+                  ? onMoveStart(event, item, rowRef.current, dayWidth)
+                  : undefined
+              }
+              className={`absolute inset-x-1.5 top-1/2 h-7 -translate-y-1/2 rounded-full bg-linear-to-r ${theme.barClass} shadow-sm ${item.isEditable ? "cursor-grab active:cursor-grabbing" : ""}`}
             />
             {item.isEditable ? (
               <>
@@ -993,7 +1012,7 @@ export function ProjectIndexPage() {
   const [visibleMapBounds, setVisibleMapBounds] = useState<MapBounds>(
     getDefaultMapBounds(),
   );
-  const [timelineScale, setTimelineScale] = useState<TimelineScale>("month");
+  const [timelineZoomIndex, setTimelineZoomIndex] = useState(5);
   const [timelineDragState, setTimelineDragState] =
     useState<TimelineDragState | null>(null);
   const workspaceRef = useRef<ProjectIndexWorkspace | null>(null);
@@ -1125,7 +1144,9 @@ export function ProjectIndexPage() {
     [workspace?.reportingProgramme],
   );
 
-  const timelineDayWidth = TIMELINE_DAY_WIDTH[timelineScale];
+  const timelineZoomStep = TIMELINE_ZOOM_STEPS[timelineZoomIndex];
+  const timelineScale = timelineZoomStep.scale;
+  const timelineDayWidth = timelineZoomStep.dayWidth;
   const timelineWidth = timelineRange.totalDays * timelineDayWidth;
   const timelineHeaderHeight =
     getTimelineHeaderRows(timelineScale).length * TIMELINE_HEADER_ROW_HEIGHT;
@@ -1136,18 +1157,11 @@ export function ProjectIndexPage() {
     const dragState = timelineDragState;
 
     function updateDraggedDate(clientX: number) {
-      const dayIndex = clamp(
+      const pointerDayIndex = clamp(
         Math.round((clientX - dragState.rowLeft) / dragState.dayWidth),
         0,
         Math.max(0, timelineRange.totalDays - 1),
       );
-      const targetDate = addDays(timelineRange.start, dayIndex);
-      const snappedDate = clampDate(
-        getTimelineSnapDate(targetDate, timelineScale, dragState.edge),
-        timelineRange.start,
-        timelineRange.end,
-      );
-      const nextValue = formatDateInput(snappedDate);
 
       setWorkspace((current) => {
         if (!current) return current;
@@ -1157,18 +1171,125 @@ export function ProjectIndexPage() {
           reportingProgramme: current.reportingProgramme.map((item) => {
             if (item.id !== dragState.itemId) return item;
 
+            const startSource =
+              dateFromInput(item.startDate) ?? dateFromInput(item.endDate);
+
+            const endSource =
+              dateFromInput(item.endDate) ?? dateFromInput(item.startDate);
+
+            if (!startSource || !endSource) return item;
+
+            /*
+             * MOVE THE WHOLE BAR
+             *
+             * Preserve its existing duration while changing both
+             * the start and end dates.
+             */
+            if (dragState.mode === "move") {
+              const durationDays =
+                dragState.durationDays ??
+                Math.max(0, getDaysDiff(startSource, endSource));
+
+              const rawStartIndex = clamp(
+                pointerDayIndex - (dragState.grabOffsetDays ?? 0),
+                0,
+                Math.max(
+                  0,
+                  timelineRange.totalDays - (durationDays + 1),
+                ),
+              );
+
+              const rawStartDate = addDays(
+                timelineRange.start,
+                rawStartIndex,
+              );
+
+              /*
+               * Movement precision depends on zoom:
+               *
+               * Year    -> quarter
+               * Quarter -> month
+               * Month   -> week
+               * Week    -> day
+               * Day     -> day
+               */
+              const snappedStartDate = snapTimelineMoveDate(
+                rawStartDate,
+                timelineScale,
+              );
+
+              const maxStartDate = addDays(
+                timelineRange.end,
+                -durationDays,
+              );
+
+              const clampedStartDate = clampDate(
+                snappedStartDate,
+                timelineRange.start,
+                maxStartDate < timelineRange.start
+                  ? timelineRange.start
+                  : maxStartDate,
+              );
+
+              const nextStart = formatDateInput(clampedStartDate);
+
+              const nextEnd = formatDateInput(
+                addDays(clampedStartDate, durationDays),
+              );
+
+              return {
+                ...item,
+                startDate: nextStart,
+                endDate: nextEnd,
+              };
+            }
+
+            /*
+             * RESIZE ONE END OF THE BAR
+             */
+            const targetDate = addDays(
+              timelineRange.start,
+              pointerDayIndex,
+            );
+
+            const snappedDate = clampDate(
+              getTimelineSnapDate(
+                targetDate,
+                timelineScale,
+                dragState.edge ?? "start",
+              ),
+              timelineRange.start,
+              timelineRange.end,
+            );
+
+            const nextValue = formatDateInput(snappedDate);
+
             const startDate = item.startDate || item.endDate;
             const endDate = item.endDate || item.startDate;
 
             if (dragState.edge === "start") {
               const safeEnd =
-                endDate && nextValue > endDate ? nextValue : endDate;
-              return { ...item, startDate: nextValue, endDate: safeEnd };
+                endDate && nextValue > endDate
+                  ? nextValue
+                  : endDate;
+
+              return {
+                ...item,
+                startDate: nextValue,
+                endDate: safeEnd,
+              };
             }
 
             const safeStart =
-              startDate && nextValue < startDate ? nextValue : startDate;
-            return { ...item, startDate: safeStart, endDate: nextValue };
+              startDate && nextValue < startDate
+                ? nextValue
+                : startDate;
+
+            return {
+              ...item,
+              startDate: safeStart,
+              endDate: nextValue,
+            };
           }),
         };
       });
@@ -1180,12 +1301,14 @@ export function ProjectIndexPage() {
     }
 
     function handlePointerUp() {
-      const currentItem = workspaceRef.current?.reportingProgramme.find(
-        (item) => item.id === dragState.itemId,
-      );
+      const currentItem =
+        workspaceRef.current?.reportingProgramme.find(
+          (item) => item.id === dragState.itemId,
+        );
 
       if (currentItem) {
         setSaveState("saving");
+
         void updateReportingProgrammeItem(dragState.itemId, {
           startDate: currentItem.startDate,
           endDate: currentItem.endDate,
@@ -1197,20 +1320,25 @@ export function ProjectIndexPage() {
                     ...current,
                     summary: {
                       ...current.summary,
-                      lastEditedBy: user?.email ?? current.summary.lastEditedBy,
-                      lastUpdatedAt: new Intl.DateTimeFormat("en-GB", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      }).format(new Date()),
+                      lastEditedBy:
+                        user?.email ??
+                        current.summary.lastEditedBy,
+                      lastUpdatedAt:
+                        new Intl.DateTimeFormat("en-GB", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        }).format(new Date()),
                     },
                   }
                 : current,
             );
+
             setSaveState("saved");
           })
           .catch((err) => {
             setSaveState("error");
+
             setError(
               err instanceof Error
                 ? err.message
@@ -1223,13 +1351,27 @@ export function ProjectIndexPage() {
     }
 
     window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp, { once: true });
+    window.addEventListener("pointerup", handlePointerUp, {
+      once: true,
+    });
 
     return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener(
+        "pointermove",
+        handlePointerMove,
+      );
+
+      window.removeEventListener(
+        "pointerup",
+        handlePointerUp,
+      );
     };
-  }, [timelineDragState, timelineRange, timelineScale, user?.email]);
+  }, [
+    timelineDragState,
+    timelineRange,
+    timelineScale,
+    user?.email,
+  ]);
 
   function openProject(projectGuid: string) {
     navigate(`/project-index/${projectGuid}`);
@@ -1241,18 +1383,95 @@ export function ProjectIndexPage() {
     edge: "start" | "end",
     rowElement: HTMLDivElement | null,
   ) {
-    if (!item.isEditable || !rowElement || timelineRange.totalDays === 0)
+    if (
+      !item.isEditable ||
+      !rowElement ||
+      timelineRange.totalDays === 0
+    ) {
       return;
+    }
 
     event.preventDefault();
     event.stopPropagation();
 
     const rect = rowElement.getBoundingClientRect();
+
     setTimelineDragState({
       itemId: item.id,
+      mode: "resize",
       edge,
       rowLeft: rect.left,
       dayWidth: rect.width / timelineRange.totalDays,
+    });
+  }
+
+  function beginTimelineMove(
+    event: React.PointerEvent<HTMLDivElement>,
+    item: ReportingProgrammeItem,
+    rowElement: HTMLDivElement | null,
+    dayWidth: number,
+  ) {
+    if (
+      !item.isEditable ||
+      !rowElement ||
+      timelineRange.totalDays === 0
+    ) {
+      return;
+    }
+
+    const startSource =
+      dateFromInput(item.startDate) ??
+      dateFromInput(item.endDate);
+
+    const endSource =
+      dateFromInput(item.endDate) ??
+      dateFromInput(item.startDate);
+
+    if (!startSource || !endSource) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const rect = rowElement.getBoundingClientRect();
+
+    const pointerDayIndex = clamp(
+      Math.round((event.clientX - rect.left) / dayWidth),
+      0,
+      Math.max(0, timelineRange.totalDays - 1),
+    );
+
+    const itemStartIndex = clamp(
+      getDaysDiff(timelineRange.start, startSource),
+      0,
+      Math.max(0, timelineRange.totalDays - 1),
+    );
+
+    const durationDays = Math.max(
+      0,
+      getDaysDiff(startSource, endSource),
+    );
+
+    /*
+     * Remember where inside the bar the user grabbed it.
+     *
+     * This stops the bar "jumping" so that its start date
+     * suddenly appears underneath the pointer.
+     */
+    const grabOffsetDays = clamp(
+      pointerDayIndex - itemStartIndex,
+      0,
+      durationDays,
+    );
+
+    setTimelineDragState({
+      itemId: item.id,
+      mode: "move",
+      rowLeft: rect.left,
+      dayWidth,
+      grabOffsetDays,
+      durationDays,
     });
   }
 
@@ -2305,56 +2524,142 @@ export function ProjectIndexPage() {
                       Dates drive the timeline directly. Duration is calculated
                       automatically.
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      {TIMELINE_SCALE_ORDER.map((scaleOption) => (
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                        Zoom
+                      </span>
+
+                      <div className="flex items-center rounded-full border border-slate-300 bg-white p-1 shadow-sm">
                         <button
-                          key={scaleOption}
                           type="button"
-                          onClick={() => setTimelineScale(scaleOption)}
-                          className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                            timelineScale === scaleOption
-                              ? "bg-[#025437] text-white"
-                              : "border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
-                          }`}
+                          disabled={timelineZoomIndex === 0}
+                          onClick={() =>
+                            setTimelineZoomIndex((current) =>
+                              Math.max(0, current - 1),
+                            )
+                          }
+                          className="flex h-9 w-9 items-center justify-center rounded-full text-lg font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300"
+                          aria-label="Zoom timeline out"
                         >
-                          {TIMELINE_SCALE_LABELS[scaleOption]}
+                          −
                         </button>
-                      ))}
+
+                        <div className="min-w-24 px-3 text-center">
+                          <div className="text-sm font-semibold text-slate-700">
+                            {timelineZoomStep.label}
+                          </div>
+
+                          <div className="text-[10px] uppercase tracking-[0.15em] text-slate-400">
+                            {timelineZoomIndex + 1} / {TIMELINE_ZOOM_STEPS.length}
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={
+                            timelineZoomIndex ===
+                            TIMELINE_ZOOM_STEPS.length - 1
+                          }
+                          onClick={() =>
+                            setTimelineZoomIndex((current) =>
+                              Math.min(
+                                TIMELINE_ZOOM_STEPS.length - 1,
+                                current + 1,
+                              ),
+                            )
+                          }
+                          className="flex h-9 w-9 items-center justify-center rounded-full text-lg font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300"
+                          aria-label="Zoom timeline in"
+                        >
+                          +
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                <div className="overflow-hidden rounded-4xl border border-slate-200">
+                {/* ============================================================
+                    GANTT SCROLL CONTAINER
+
+                    Behaviour:
+                    - Both left table and right Gantt scroll vertically together.
+                    - Left table remains fixed horizontally.
+                    - Only the right Gantt scrolls horizontally.
+                    - Both the left column headings and Gantt date headings
+                      remain sticky while scrolling vertically.
+                   ============================================================ */}
+                <div className="max-h-[70vh] overflow-y-auto rounded-4xl border border-slate-200 bg-white">
                   <div className="flex">
+
+                    {/* ==========================================================
+                        LEFT SIDE — FIXED HORIZONTALLY
+
+                        Contains:
+                        - Item
+                        - Lvl
+                        - Start
+                        - End
+                        - Duration
+
+                        This side participates in the shared vertical scroll,
+                        but does not move horizontally.
+                       ========================================================== */}
                     <div
                       className="shrink-0 border-r border-slate-200 bg-white"
-                      style={{ width: REPORTING_LEFT_WIDTH }}
+                      style={{
+                        width: REPORTING_LEFT_WIDTH,
+                        marginRight: REPORTING_TIMELINE_GAP,
+                      }}
                     >
+
+                      {/* ----------------------------------------------------------
+                          LEFT COLUMN HEADER — STICKY VERTICALLY
+                         ---------------------------------------------------------- */}
                       <div
-                        className="grid border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500"
+                        className="sticky top-0 z-40 grid border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500"
                         style={{
                           gridTemplateColumns: REPORTING_LEFT_GRID,
                           height: timelineHeaderHeight,
                         }}
                       >
-                        <div className="flex items-center px-4">Item</div>
-                        <div className="flex items-center px-3">Lvl</div>
-                        <div className="flex items-center px-3">Start</div>
-                        <div className="flex items-center px-3">End</div>
-                        <div className="flex items-center px-3">Duration</div>
+                        <div className="flex items-center px-4">
+                          Item
+                        </div>
+
+                        <div className="flex items-center px-3">
+                          Lvl
+                        </div>
+
+                        <div className="flex items-center justify-center px-3 text-center">
+                          Start
+                        </div>
+
+                        <div className="flex items-center justify-center px-3 text-center">
+                          End
+                        </div>
+
+                        <div className="flex items-center justify-center px-3 text-center">
+                          Duration
+                        </div>
                       </div>
 
+                      {/* ----------------------------------------------------------
+                          LEFT PROGRAMME CONTENT
+                         ---------------------------------------------------------- */}
                       {reportingSections.map((section) => {
                         const theme = getSectionTheme(section.sectionCode);
 
                         return (
                           <Fragment key={section.sectionCode}>
+
+                            {/* Section heading */}
                             <div
                               className={`flex h-12 items-center border-b border-slate-200 px-4 text-sm font-semibold ${theme.headerClass}`}
                             >
                               {section.sectionLabel}
                             </div>
 
+                            {/* Individual programme rows */}
                             {section.items.map((item) => (
                               <div
                                 key={item.id}
@@ -2364,6 +2669,8 @@ export function ProjectIndexPage() {
                                   minHeight: 84,
                                 }}
                               >
+
+                                {/* Item name */}
                                 <div
                                   className={`flex items-center px-4 py-3 ${theme.textClass}`}
                                   style={{
@@ -2374,9 +2681,13 @@ export function ProjectIndexPage() {
                                     {item.rowLabel}
                                   </div>
                                 </div>
+
+                                {/* Level */}
                                 <div className="flex items-center px-3 text-sm text-slate-600">
                                   {item.levelCode}
                                 </div>
+
+                                {/* Start date */}
                                 <div className="flex items-center px-3 py-2">
                                   <input
                                     type="date"
@@ -2388,15 +2699,13 @@ export function ProjectIndexPage() {
                                           ? {
                                               ...current,
                                               reportingProgramme:
-                                                current.reportingProgramme.map(
-                                                  (row) =>
-                                                    row.id === item.id
-                                                      ? {
-                                                          ...row,
-                                                          startDate:
-                                                            event.target.value,
-                                                        }
-                                                      : row,
+                                                current.reportingProgramme.map((row) =>
+                                                  row.id === item.id
+                                                    ? {
+                                                        ...row,
+                                                        startDate: event.target.value,
+                                                      }
+                                                    : row,
                                                 ),
                                             }
                                           : current,
@@ -2414,6 +2723,8 @@ export function ProjectIndexPage() {
                                     }`}
                                   />
                                 </div>
+
+                                {/* End date */}
                                 <div className="flex items-center px-3 py-2">
                                   <div className="w-full">
                                     <input
@@ -2426,16 +2737,13 @@ export function ProjectIndexPage() {
                                             ? {
                                                 ...current,
                                                 reportingProgramme:
-                                                  current.reportingProgramme.map(
-                                                    (row) =>
-                                                      row.id === item.id
-                                                        ? {
-                                                            ...row,
-                                                            endDate:
-                                                              event.target
-                                                                .value,
-                                                          }
-                                                        : row,
+                                                  current.reportingProgramme.map((row) =>
+                                                    row.id === item.id
+                                                      ? {
+                                                          ...row,
+                                                          endDate: event.target.value,
+                                                        }
+                                                      : row,
                                                   ),
                                               }
                                             : current,
@@ -2452,6 +2760,8 @@ export function ProjectIndexPage() {
                                           : "border-slate-200 bg-slate-50 text-slate-400"
                                       }`}
                                     />
+
+                                    {/* Validation message */}
                                     {validation[`reporting-${item.id}`] ? (
                                       <p className="mt-1 text-[11px] text-red-600">
                                         {validation[`reporting-${item.id}`]}
@@ -2459,7 +2769,9 @@ export function ProjectIndexPage() {
                                     ) : null}
                                   </div>
                                 </div>
-                                <div className="flex items-center px-3 text-sm text-slate-600">
+
+                                {/* Duration */}
+                                <div className="flex items-center justify-center px-3 text-center text-sm text-slate-600">
                                   {getDurationLabel(item)}
                                 </div>
                               </div>
@@ -2469,9 +2781,39 @@ export function ProjectIndexPage() {
                       })}
                     </div>
 
-                    <div className="min-w-0 flex-1 overflow-x-auto overflow-y-hidden bg-white">
+
+                    {/* ==========================================================
+                        RIGHT SIDE — HORIZONTALLY SCROLLABLE GANTT
+
+                        Only this side moves left/right.
+                        It still shares vertical scrolling with the left side.
+                       ========================================================== */}
+                    <div className="min-w-0 flex-1 overflow-x-auto bg-white">
+
+                      {/* The actual timeline may be wider than the available area */}
                       <div style={{ width: timelineWidth }}>
-                        <div className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+
+                        {/* --------------------------------------------------------
+                            GANTT DATE HEADER — STICKY VERTICALLY
+
+                            Keeps:
+                            - Year
+                            - Quarter
+                            - Month
+                            - Week
+                            - Day
+
+                            visible while scrolling down.
+
+                            Because it remains inside the horizontal Gantt area,
+                            it moves left/right together with the bars.
+                           -------------------------------------------------------- */}
+                        <div
+                          className="sticky top-0 z-40 border-b border-slate-200 bg-white"
+                          style={{
+                            height: timelineHeaderHeight,
+                          }}
+                        >
                           <TimelineHeader
                             range={timelineRange}
                             scale={timelineScale}
@@ -2479,15 +2821,22 @@ export function ProjectIndexPage() {
                           />
                         </div>
 
+                        {/* --------------------------------------------------------
+                            GANTT PROGRAMME CONTENT
+                           -------------------------------------------------------- */}
                         {reportingSections.map((section) => {
                           const theme = getSectionTheme(section.sectionCode);
 
                           return (
                             <Fragment key={section.sectionCode}>
+
+                              {/* Section colour band matching the left side */}
                               <div
                                 className={`h-12 border-b border-slate-200 ${theme.headerClass}`}
                                 style={{ width: timelineWidth }}
                               />
+
+                              {/* Individual Gantt rows */}
                               {section.items.map((item) => {
                                 const placement = getTimelinePlacement(
                                   item,
@@ -2508,6 +2857,7 @@ export function ProjectIndexPage() {
                                       placement={placement}
                                       theme={theme}
                                       onResizeStart={beginTimelineResize}
+                                      onMoveStart={beginTimelineMove}
                                     />
                                   </div>
                                 );
@@ -2517,6 +2867,7 @@ export function ProjectIndexPage() {
                         })}
                       </div>
                     </div>
+
                   </div>
                 </div>
               </section>
