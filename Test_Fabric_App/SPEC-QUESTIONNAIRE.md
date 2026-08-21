@@ -96,8 +96,10 @@ This file now acts as a compact decision register and outstanding-question list 
 - only exists under `Tenure`
 
 ## 5. Reporting Programme
-- hybrid behavior
-- editable vs formula-driven behavior should remain, but without literal Excel yellow cells
+- whole-lifecycle reporting view across all stages at any point in the project lifecycle
+- hybrid behavior: editable reporting dates plus formula/derived fields
+- editable vs formula-driven behavior should remain, without literal Excel yellow/grey styling
+- formula/derived fields are read-only in the app
 - `RAG` / `RAG Comment` live on relevant `Target Programme` sections and appear here for reference
 - `Mth` is calculated from dates
 - `Lvl` values:
@@ -108,29 +110,64 @@ This file now acts as a compact decision register and outstanding-question list 
 - allowed `RAG`: `R`, `A`, `G`
 - timeline/gantt required in first release
 - preferred v1 layout is structured grid first with timeline beside
-- first delivered slice should include the full section structure, even if some rows are placeholders
-- standard templates are a `v2` idea
+- Reporting Programme does not wholesale auto-roll-up from Target Programme
+- relevant reporting dates have explicit mappings to the Target Programme item used for comparison
+- mapping is metadata and labels do not need to match (e.g. Reporting `Contract Award` -> Target `Issue Award Letters`)
 
 ## 6. Target Programme
-### Cross-cutting direction
-- app should evolve beyond Excel limitations where useful
-- milestones = end date only
-- activities = start + end date
-- dependencies/interdependencies are desirable
-- development managers should keep the active stage updated monthly
-- reporting dates must be kept current regardless of stage
 
-### Overall behavior
-- `Target Programme` is the operational source of truth
-- `Reporting Programme` does not roll up automatically from it
-- current structure is proposed, not fully finalized
-- v1 uses provided standard rows
-- no custom rows in v1
-- row additions are a `v2` feature
-- dependency rules are helpful
+### Cross-cutting direction
+- Target Programme is the detailed operational source of truth for **target** dates
+- stage workspaces are:
+  1. Land Activation
+  2. Site Pipeline
+  3. Planning
+  4. Detailed Design, Tender, Contract
+  5. Construction
+- opening Target Programme focuses the stage mapped from `Reporting Stage`
+- previous stages are visible/read-only
+- current stage is editable
+- future stages are editable for forward planning
+- v1 dynamically unlocks an earlier stage if Reporting Stage is moved backwards; formal approval workflow is out of scope
+- Reporting Stage -> Target Programme stage mapping is explicit/configured, not inferred from labels
+- v1 programme activities/milestones are centrally defined across projects by Admin
+- no custom project-user rows in v1; custom rows are a v2 possibility
+
+### Row semantics
+- milestone = `End Date` only
+- activity = `Start Date` + `End Date`
+- summary = formula-driven/read-only row over a maintained group of child rows
+- reporting reference = read-only Reporting Programme date shown in Target Programme
+- summary start = earliest applicable child start
+- summary end = latest applicable child end
+- summaries may exist at stage level and intermediate grouping levels
+- any grey/formula-driven workbook field is derived/read-only in the app
+
+### Programme dates / baseline
+- underlying project programme model holds baseline, target and reporting date sets per programme item
+- baseline is populated through the separate yearly budgeting/baseline process
+- baseline is not visible/editable in v1 Project Index
+- baseline remains available downstream for reporting/variance analysis
+
+### Dependencies
+- dependencies are explicit centrally maintained rules, not configured by normal project users
+- v1 project UI does not expose dependency editing or lag configuration
+- data model supports dependency type and lag
+- current business dependency pattern is primarily same-day Finish-to-Start: predecessor End = successor Start
+- dependency-driven fields are read-only in project UI
+- moving a predecessor recalculates dependent dates
+- recalculation propagates through the chain
+- dependent activity duration is preserved when its derived start moves unless another explicit rule controls the end
+- dependency cycles must be prevented
+
+### Reporting mappings
+- reporting-reference rows are read-only
+- each relevant Reporting Programme date maps explicitly to a Target Programme activity/milestone used for comparison
+- mappings can join differently named items
 
 ### Land Activation
-- v1 rows fixed
+- v1 rows fixed/centrally defined
+- stage/intermediate summaries are allowed and derived
 - `Partner?`: dropdown
 - `Transferred to Property (# Homes)`: numeric, manual
 - `Plot for Disposal (# Homes enabled)`: numeric, manual
@@ -138,14 +175,15 @@ This file now acts as a compact decision register and outstanding-question list 
 - own `RAG` / `RAG Comment`
 
 ### Site Pipeline
-- v1 rows fixed
+- v1 rows fixed/centrally defined
 - `Potential Opportunity?` filters a project out of reporting when `Yes`
 - `# Homes`: manual
-- Gateway rows are both milestones and summaries depending on row
+- Gateway rows are milestones or summaries according to maintained metadata
 - own `RAG` / `RAG Comment`
 
 ### Planning
-- v1 rows fixed
+- v1 rows fixed/centrally defined
+- stage/intermediate summaries include patterns such as `Planning Stage` and `Project Kick-Off - Stage 1A Complete`
 - `Advancing Gateway 4?`: `Yes`, `No`, `Yes (Partial)`
 - `Planning Granted?`: `Yes`, `No`
 - `Partial Advance G4: Name` used when only part of project advances
@@ -154,25 +192,25 @@ This file now acts as a compact decision register and outstanding-question list 
 - own `RAG` / `RAG Comment`
 
 ### Detailed Design, Tender, Contract
-- v1 rows fixed
-- `Reporting Date` rows visually show dates from `Reporting Programme`
+- v1 rows fixed/centrally defined
+- `Reporting Date` rows are read-only mapped values from Reporting Programme
+- reporting-reference rows map to the operational Target item they are compared against
 - `Planning Status`: `Not Lodged`, `Lodged`, `Granted`
 - v1 uses one standard structure
-- longer term, structure may be driven from another maintained list
+- longer term, structure is maintained through Admin/configuration rather than code
 - own `RAG` / `RAG Comment`
 
 ### Construction
 - functionally similar overall, but revised
 - blocks are not created here
 - blocks are created in `Tenure > Block Master`
-- Construction behaves more like a delivery tracker
-- rows can reference:
-  - a block from `Block Master`
-  - or a works item like `Infrastructure works`
+- Construction behaves as a separate delivery tracker even though it is stage 5 in navigation
+- rows can reference a block or a works item like `Infrastructure works`
 - screenshot columns are a good starting point
 - must support many phases, e.g. 17
 - `RAG` / `RAG Comment` apply per row
 - Construction holds live delivery dates
+
 
 ## 7. Tenure
 ### Overall behavior
@@ -298,21 +336,23 @@ This file now acts as a compact decision register and outstanding-question list 
 - are `Site Name` and `Public Name` both mandatory?
 
 ## Reporting Programme
-- are `Gateway`, `Reporting Stage`, and `Sub-Stage` edited here or elsewhere?
+- are `Gateway`, `Reporting Stage`, and `Sub-Stage` edited here or inherited from Project Information?
 - do all rows or only key rows surface `RAG`?
-- do child rows roll up automatically?
-- should gantt bars be draggable in v1?
-- does stage structure vary by project type?
+- exact summary/roll-up rules for any Reporting Programme rows not already defined
 
-## Target Programme
-- globally fixed stage structure vs project-type variants
-- blocking vs warning-only dependencies
-- meaning of hatched chart styling
-- whether extra tasks can be added in Site Pipeline later
-- whether Planning drives Reporting Programme automatically
-- milestone vs duration definitions for DDTC
-- split-contract behavior
-- Construction BCAR/hand-over/import behavior
+## Programme configuration
+- final centrally maintained row catalogue and ordering for each stage
+- final summary membership catalogue
+- final dependency catalogue and any non-zero lag values
+- final Reporting-to-Target mapping catalogue
+- meaning of legacy hatched timeline styling where it is not explained by dependency/derived-date behavior
+- whether future v2 programme templates vary by project type
+
+## Construction
+- BCAR field requirements
+- `Handed over to Asset Management`: date, status, or both
+- whether construction rows may later sync/import from another system
+- whether the top construction chart is generated directly from delivery-item rows
 
 ## Tenure
 - Homes lookup values for `Tenure`, `Home Type`, `Home Size`
@@ -324,4 +364,3 @@ This file now acts as a compact decision register and outstanding-question list 
 - future board-report editable vs generated split
 - future board-report export format priority
 - print/export visual fidelity expectations
-- v1 gantt drag/drop vs visual-first behavior

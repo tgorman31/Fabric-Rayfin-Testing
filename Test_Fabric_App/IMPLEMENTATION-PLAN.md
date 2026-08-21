@@ -205,41 +205,82 @@ Likely initial roles:
 Recommended v1 rule:
 - one person per project only, enforced through application validation and ideally a uniqueness rule once identity semantics are finalized
 
-#### 3. Reporting Programme
-- `project_reporting_programme_item`
-  - `reporting_programme_item_guid`
-  - `project_guid`
-  - `section_code`
-  - `row_code`
+#### 3. Programme definitions and project programme dates
+
+The programme model should separate **centrally maintained programme definitions** from **project-specific date records**. Adapt names to existing tables where an equivalent already exists rather than duplicating the model.
+
+Recommended definition entities:
+
+- `programme_item_definition`
+  - stable item GUID/code
+  - `stage_code`
   - `row_label`
-  - `level_code`
+  - `row_type` (`activity`, `milestone`, `summary`, `reporting_reference`)
   - `sort_order`
-  - `is_editable`
-  - `reporting_date`
-  - `start_date`
-  - `end_date`
-  - `month_value`
-  - cached reference fields for `rag_code` / `rag_comment`
+  - optional `level_code`
+  - active/effective flags
+  - derivation/editability metadata
+
+- `programme_summary_member`
+  - summary item definition
+  - child item definition
+  - ordering/weight metadata if ever needed
+
+- `programme_dependency_definition`
+  - predecessor item definition
+  - successor item definition
+  - dependency type (support at least `FS` in v1)
+  - `lag_days`
+  - which successor field is derived
+  - active/effective flags
+
+- `programme_reporting_mapping`
+  - Reporting Programme definition/item
+  - Target Programme definition/item
+  - mapping purpose/role
+  - active/effective flags
+
+Recommended project instance entity (equivalent to the existing `tblProgramme` concept):
+
+- `project_programme`
+  - programme record GUID
+  - `project_guid`
+  - programme item definition FK
+  - `baseline_start`
+  - `baseline_end`
+  - `target_start`
+  - `target_end`
+  - `reporting_start`
+  - `reporting_end`
   - audit columns
 
-#### 4. Target Programme
-- `project_target_programme_item`
-  - `target_programme_item_guid`
-  - `project_guid`
-  - `section_code`
-  - `row_code`
-  - `row_label`
-  - `row_type` (`milestone`, `activity`, `summary`, `reporting_reference`)
-  - `sort_order`
-  - `start_date`
-  - `end_date`
-  - `reporting_date`
-  - `status_code`
-  - section-specific value columns or linked detail values
-  - `rag_code`
-  - `rag_comment`
-  - `dependency_key` / `depends_on_row_code` if implemented in v1
-  - audit columns
+V1 rules:
+- baseline fields remain in the data model but are not exposed in Project Index operational UI
+- Target Programme reads/writes target fields for normal editable activities/milestones
+- Reporting Programme reads/writes reporting fields for reporting items
+- `summary` rows are calculated, not independently persisted as user-entered dates unless a technical cache is explicitly justified
+- `reporting_reference` rows display the mapped Reporting Programme value and are read-only in Target Programme
+- dependency-driven fields are calculated/read-only in the project UI
+
+#### 4. Reporting Programme
+
+Reporting Programme is the whole-lifecycle reporting view. It uses the same programme-definition/project-programme model rather than a disconnected parallel set of labels wherever practical.
+
+Required metadata/behaviour:
+- reporting row definition and ordering
+- `Lvl`
+- editability/derived status
+- explicit mapping to the relevant Target Programme item where comparison is required
+- calculated duration/month values
+- reference `RAG`/comment from Target Programme sections
+
+Reporting Programme does not automatically roll up wholesale from Target Programme; explicit mappings allow comparison and variance while preserving separate reporting and target date ownership.
+
+#### 4a. Target Programme stage/detail data
+
+Target Programme stage-specific business attributes should be kept separate from generic programme dates, e.g. Land Activation partner/home counts, Site Pipeline opportunity/home count, Planning flags, DDTC planning status, and section RAG/comment.
+
+Use strongly typed stage/detail entities where fields are materially different rather than adding many nullable columns to `project_programme`.
 
 #### 5. Construction delivery tracker
 Either:
@@ -366,72 +407,123 @@ Implement as repeating editable grid with:
 
 ---
 
-## Phase 5 - Reporting Programme v1
+## Phase 5 - Shared programme timeline + Reporting Programme
 
 ### Objectives
-- deliver workbook-like reporting content in a more modern interface
-- preserve editable vs derived behavior
-- introduce the first visual programme/timeline experience
+- preserve the working Reporting Programme while extracting reusable programme-planning components
+- establish the shared timeline/Gantt engine before implementing Target Programme stages
+- keep Reporting Programme as the whole-lifecycle reporting view
 
-### Scope
-1. Create Reporting Programme section layout matching the agreed structure.
-2. Distinguish:
-   - editable reporting fields
-   - derived/formula-style fields
-3. Calculate and show `Mth`.
-4. Support `Lvl` values:
-   - `B`
-   - `E`
-   - `O`
-   - `P`
-5. Show reference `RAG` and `RAG Comment` from relevant Target Programme sections.
-6. Add a gantt/timeline visualization.
+### 5.1 Refactor before adding Target Programme UI
 
-### Recommended v1 interaction model
-- structured grid editing first, with the timeline beside the grid where space allows
+Refactor the current Reporting Programme implementation **without changing current behaviour**:
+1. Extract pure timeline/date utilities.
+2. Extract reusable timeline header rendering.
+3. Extract reusable activity-bar and milestone-marker rendering.
+4. Extract zoom controls/zoom state.
+5. Extract drag/resize/move behaviour into a reusable hook or timeline controller.
+6. Introduce a shared `ProgrammeTimelineItem` interface/view model.
+7. Keep Reporting Programme-specific grid columns outside the generic timeline engine.
+8. Preserve auto-save, validation, section colours, scale-dependent snapping, whole-bar move and end-handle resizing.
+9. Verify the Reporting Programme visually and functionally after refactor before Target Programme consumes the shared component.
+
+Recommended component shape:
+- `components/programme/ProgrammeTimeline.tsx`
+- `components/programme/ProgrammeTimelineHeader.tsx`
+- `components/programme/ProgrammeTimelineRow.tsx`
+- `components/programme/ProgrammeZoomControls.tsx`
+- `hooks/useProgrammeTimeline.ts`
+- `utils/programmeTimeline.ts`
+
+Names can vary, but responsibilities should remain separated.
+
+### 5.2 Reporting Programme behavior
+- structured grid editing first, with timeline beside it
 - field-by-field auto-save
-- header-level `Saving...` / `Saved` status
-- inline validation that blocks invalid saves immediately
-- gantt bars render from stored dates
-- no drag-to-edit requirement in v1 unless the underlying component is reliable and low-risk
-
-### Visual design guidance
-- preserve a close overall structure to the screenshot
-- use normal web conventions for editability instead of yellow Excel cells
-- use brand greens for shell accents, headings, and active states
-- use contrasting complementary colors for visible reporting-date rows as requested
-
-### Technical notes
-- keep row definitions config-driven where possible
-- allow formula-like derived fields to be computed in service/view-model logic rather than manually entered
+- header-level `Saving...` / `Saved`
+- inline validation
+- full lifecycle dates across all programme stages
+- calculated `Mth`
+- `Lvl` support (`B`, `E`, `O`, `P`)
+- reference RAG/comment from Target Programme
+- explicit Reporting-to-Target mapping where a reporting date is compared with an operational target item
 
 ### Exit criteria
-- Reporting Programme supports edit + persist for reporting fields
-- the full agreed Reporting Programme section structure is present, even if some rows are placeholders in the first slice
-- derived fields are rendered correctly
-- gantt/timeline is visible for v1
+- Reporting Programme behaviour is unchanged or intentionally improved with no regression
+- shared timeline engine is no longer embedded in the large Project Index page
+- shared timeline supports activity bars and milestone markers
+- the shared timeline is ready to be consumed by Target Programme
+- build, lint and tests pass
 
 ---
 
 ## Phase 6 - Target Programme v1
 
 ### Objectives
-- create the operational planning workspace
-- support milestone/activity structure across the agreed sections
-- provide section-level RAG tracking
+- create the detailed operational planning workspace
+- implement stage-focused planning using centrally maintained programme definitions
+- support summaries, explicit dependencies, reporting references and section-level RAG
 
-### Common implementation pattern
-For each section:
-- fixed row definitions in v1
-- row type supports milestone vs activity
-- editable dates
-- section-specific fields where required
-- `RAG`
-- `RAG Comment`
-- optional dependency metadata
+### Stage navigation/editability
+
+Stages:
+1. Land Activation
+2. Site Pipeline
+3. Planning
+4. Detailed Design, Tender, Contract
+5. Construction
+
+Rules:
+- opening Target Programme should focus the stage mapped from the project's `Reporting Stage`
+- previous stages remain navigable but read-only
+- current stage is editable
+- future stages remain editable for forward planning
+- editability is evaluated dynamically; if Reporting Stage is moved backwards in v1, the relevant stage becomes editable again
+- approval workflow for backward stage movement is outside v1
+- Reporting Stage -> Target Programme stage mapping must be maintained explicitly in metadata/configuration rather than inferred from labels
+
+### Common row semantics
+
+Centrally maintained definitions support:
+- `activity`: target start + target end
+- `milestone`: target end only
+- `summary`: read-only formula row over a maintained group of child rows
+- `reporting_reference`: read-only value from mapped Reporting Programme date
+
+Summary rules:
+- summary start = earliest applicable child start
+- summary end = latest applicable child end
+- summaries can exist at stage level and at intermediate grouping levels
+- grey/formula-driven workbook fields become derived/read-only UI fields
+
+### Dependencies
+
+Implement dependency evaluation as programme logic, not as free-form project-user configuration.
+
+V1 requirements:
+- dependency definitions are maintained centrally/Admin-side
+- normal project UI does not expose dependency editing
+- model supports dependency type and `lag_days`; initial business use is primarily zero-lag Finish-to-Start
+- a dependency-driven field is visibly read-only
+- predecessor movement recalculates successor dates
+- propagation continues through the dependency chain
+- dependent activity duration is preserved when its derived start moves, unless another rule controls its end
+- detect/prevent dependency cycles
+- persist only authoritative input dates; derived values should be recomputed consistently in service/domain logic
+
+### Reporting references and mappings
+- every Reporting Programme date shown in Target Programme uses an explicit maintained mapping
+- reporting-reference rows are read-only
+- mapping labels may differ, e.g. Reporting `Contract Award` maps to Target `Issue Award Letters`
+- expose target-vs-reporting variance in the view model where useful, even if detailed variance UI is deferred
+
+### Baseline
+- preserve baseline fields in the data model
+- do not display/edit baseline in v1 Project Index
+- baseline is populated through the separate annual budgeting/baseline process and used downstream for reporting/comparison
 
 ### 6.1 Land Activation
-Implement fixed rows with:
+Implement fixed definitions plus:
 - `Partner?`
 - `Transferred to Property (# Homes)`
 - `Plot for Disposal (# Homes enabled)`
@@ -439,17 +531,18 @@ Implement fixed rows with:
 - section `RAG` / `RAG Comment`
 
 ### 6.2 Site Pipeline
-Implement fixed rows with:
+Implement fixed definitions plus:
 - `Potential Opportunity?`
 - `# Homes`
-- mixed milestone/summary gateway rows
+- stage/intermediate summaries as defined
 - section `RAG` / `RAG Comment`
 
 Behavior:
 - `Potential Opportunity? = Yes` should exclude the project from reporting outputs where required
 
 ### 6.3 Planning
-Implement fixed rows with:
+Implement fixed definitions plus:
+- stage/intermediate summary rows such as `Planning Stage` and `Project Kick-Off - Stage 1A Complete`
 - `Advancing Gateway 4?`
 - `Planning Granted?`
 - `Partial Advance G4: Name`
@@ -457,31 +550,38 @@ Implement fixed rows with:
 - section `RAG` / `RAG Comment`
 
 ### 6.4 Detailed Design / Tender / Contract
-Implement fixed rows with:
-- standard v1 structure
+Implement fixed definitions plus:
 - `Planning Status`
-- visually distinct `Reporting Date` reference rows fed from Reporting Programme
+- visually distinct read-only `Reporting Date` reference rows fed from Reporting Programme mappings
+- target rows that those reporting dates are compared against
 - section `RAG` / `RAG Comment`
 
 ### 6.5 Construction
-Implement as a delivery tracker, not a block-definition area.
+Implement as a delivery tracker, not as the generic target-programme item grid.
 
 Behavior:
-- rows can represent:
-  - linked block items from `Block Master`
-  - non-block works items such as infrastructure
+- rows can represent linked blocks from `Block Master` or non-block works items
 - support many phases
 - store live delivery dates
 - include row `RAG` / `RAG Comment`
+- honour stage read-only/editable rules from Reporting Stage
 
 ### Recommended technical approach
-- maintain row definitions in config/reference tables so labels and sort order are editable without code churn later
-- keep user-entered instances separate from static row-definition metadata
+- keep programme definition metadata separate from project programme dates
+- keep stage-specific attributes separate from generic programme date records
+- use the shared Programme Timeline engine from Phase 5 for Land Activation, Site Pipeline, Planning and DDTC
+- Construction may reuse lower-level timeline primitives but should remain its own delivery-tracker component/model
+- place dependency/summary/mapping calculation in service/domain logic rather than UI components
 
 ### Exit criteria
-- all agreed Target Programme sections are available in v1
-- rows are fixed and persist correctly
-- section-level RAG flows through to Reporting Programme reference views where needed
+- all agreed Target Programme stages are navigable
+- current and future stages edit correctly; previous stages are read-only
+- fixed activity/milestone definitions persist project target dates correctly
+- summary rows calculate correctly and are read-only
+- dependency chains recalculate correctly
+- reporting-reference rows display mapped Reporting Programme dates
+- section-level RAG flows to Reporting Programme reference views where needed
+
 
 ---
 
@@ -621,47 +721,53 @@ For v2:
 
 ## Recommended build order inside engineering sprints
 
-### Sprint sequence
-1. Phase 1: app shell + permissions
-2. Phase 2: project list and project selection
-3. Phase 3: core data model + reference tables
-4. Phase 4: Project Information
-5. Phase 5: basic Reporting Programme shell + timeline
-6. Phase 8: Admin basics for required dropdowns
-7. Phase 6: Target Programme sections
-8. Phase 7: Tenure + Block Master
-9. Construction completion/refinement if not already folded into Phase 6
-10. Phase 9: snapshots/reporting prerequisites
-11. visual polish and parity pass against screenshots
+### Current sequence from the present codebase
+1. **Programme architecture refactor:** extract the existing Reporting Programme Gantt/timeline into reusable programme components without changing behaviour.
+2. Add/align programme definition metadata and the project programme date model (baseline/target/reporting fields).
+3. Add summary membership, dependency definitions and Reporting-to-Target mappings.
+4. Add Admin maintenance/read-only configuration surfaces needed for programme definitions/dependencies/mappings.
+5. Implement Target Programme stage shell and Reporting Stage -> Target stage focus/editability.
+6. Implement Land Activation and Site Pipeline using the shared timeline engine.
+7. Implement Planning, including intermediate summary rows and dependencies.
+8. Implement DDTC, including reporting-reference mappings.
+9. Implement Tenure + Block Master as required for Construction.
+10. Implement/refine Construction delivery tracker.
+11. Snapshot/reporting prerequisites and downstream baseline/variance reporting.
+12. visual polish and parity pass against screenshots.
 
 ### Why this order
-- protects current Register behavior first
-- establishes selection and data model before heavy UI work
-- gets a useful editable Project Information slice live early
-- unlocks dropdown-driven tabs through Admin before deep rollout
-- leaves Board Report as future-facing work without blocking v1
+- the existing Reporting Programme becomes the proving ground for reusable programme infrastructure
+- shared Gantt/timeline logic is extracted once before four Target Programme stages need it
+- programme data semantics are established before stage UI creates ad-hoc structures
+- dependencies and reporting mappings are explicit metadata rather than buried in UI code
+- Construction remains correctly separated from the generic stage programme model
 
 ---
 
-## Key dependencies and design decisions to confirm early
+## Confirmed programme architecture decisions
 
-### High-priority confirmations
-1. Exact parsing rules for deriving `Site Code`, `Planning Code`, and `Contract Code`
-2. Final reference lists for:
-   - Gateway
-   - Reporting Stage
-   - Sub-Stage
-   - Project Status
-   - Reporting Status
-3. Whether staff users come from free text, controlled list, or directory lookup
-4. Whether historical project refs should be shown inline in the main list or via a history action
-5. Which gantt/timeline component is acceptable in the Fabric app context
-6. Whether Target Programme row definitions should be hardcoded for first release or stored as metadata immediately
+The following are no longer open design questions:
+- standard programme activities/milestones are centrally defined across projects in v1
+- milestone = end date only; activity = start + end
+- summary rows derive earliest child start/latest child end and are read-only
+- previous Target stages are read-only; current and future stages are editable
+- Reporting Stage determines the focused/current Target stage and dynamic editability
+- changing Reporting Stage backwards unlocks the corresponding stage in v1
+- Reporting-reference rows are read-only and map explicitly to Reporting Programme dates
+- each relevant reporting date maps explicitly to the Target Programme item used for comparison
+- dependencies are centrally defined; dependent fields are read-only
+- dependency changes propagate through chains
+- dependency model supports lag, with normal project UI not exposing lag configuration
+- v1 business dependencies are primarily explicit same-day Finish-to-Start relationships
+- baseline dates remain in the data model but are not visible/editable in the operational UI
 
-### Lower-priority confirmations
-- whether child programme rows need automatic rollup in v1
-- whether gantt bars should be draggable
-- whether any project types need variant Target Programme structures in v1
+## Remaining high-priority confirmations
+1. Exact parsing rules for deriving `Site Code`, `Planning Code`, and `Contract Code`.
+2. Final reference lists for Gateway, Reporting Stage, Sub-Stage, Project Status and Reporting Status.
+3. Final centrally maintained programme row catalogue, summary memberships, dependency catalogue and Reporting-to-Target mapping catalogue.
+4. Whether staff users come from free text, controlled list, or directory lookup for the final production implementation.
+5. Construction BCAR/hand-over semantics before Construction is finalized.
+
 
 ---
 
@@ -703,6 +809,51 @@ After functional rollout, run a focused UI polish pass against the screenshots c
 
 ---
 
+## Implementation orchestration via GitHub
+
+Use GitHub as the durable hand-off layer between product/architecture planning and the coding agent.
+
+### Source of truth
+- `SPEC.md` = product/business requirements and confirmed behaviour
+- `IMPLEMENTATION-PLAN.md` = architecture, sequencing and implementation constraints
+- `SPEC-QUESTIONNAIRE.md` = decision log plus genuinely unresolved questions
+- GitHub Issues = one atomic implementation task at a time
+- Pull Requests = implementation result, tests, review and acceptance record
+
+### Recommended loop
+1. Orchestrator reviews current repo + canonical MD files.
+2. Orchestrator creates/refines one scoped GitHub Issue with acceptance criteria and references to the relevant MD sections.
+3. Coding agent implements **only that issue** on a dedicated branch.
+4. Coding agent runs required build/lint/tests and posts a concise completion report.
+5. Coding agent opens a PR linked to the issue.
+6. Orchestrator reviews diff/PR against the spec and acceptance criteria.
+7. Any gaps become targeted PR comments or a follow-up issue; avoid expanding scope silently inside the current PR.
+8. Once accepted and checks pass, merge.
+9. Update the canonical docs only when a decision/architecture change occurred, then select the next issue.
+
+### Issue template content
+Each implementation issue should include:
+- **Goal**
+- **Why now / dependency**
+- **In scope**
+- **Out of scope**
+- **Relevant spec/plan sections**
+- **Required behaviour**
+- **Technical constraints**
+- **Acceptance criteria**
+- **Required checks** (`build`, `lint`, `test`, plus manual UI checks where applicable)
+- **Completion report format**
+
+### Agent guardrails
+- do not redesign requirements while implementing
+- do not add unrelated refactors/dependencies unless required by the issue
+- preserve existing behaviour unless the issue explicitly changes it
+- keep reusable programme logic out of large page components
+- report assumptions/blockers rather than silently inventing business rules
+- PR description must list changed files, tests/checks, manual verification, and known follow-ups
+
+---
+
 ## Risks and mitigations
 
 ### Risk: trying to recreate Excel too literally
@@ -739,7 +890,7 @@ The v1 release should be considered complete when:
 - users can search/select projects from a Project Index list
 - Project Information is editable and persisted
 - Reporting Programme is available with a v1 gantt/timeline
-- Target Programme sections are available with fixed rows and RAG tracking
+- Target Programme stages are available with fixed definitions, stage-aware editability, summaries, mapped reporting references, dependency propagation and RAG tracking
 - Tenure sub-tabs and Block Master are available
 - Construction delivery tracking is available
 - Admin-maintained dropdown/reference lists are in place
@@ -749,10 +900,15 @@ The v1 release should be considered complete when:
 
 ## Immediate next implementation step
 
-Start with the user-preferred first slice:
-- Phase 1 app shell and permission gating
-- Phase 2 Project Index landing page with project search/select
-- Phase 4 Project Information
-- basic Phase 5 Reporting Programme shell
+**Next coding-agent ticket: Refactor the existing Reporting Programme timeline/Gantt into reusable programme components without changing its current user-visible behaviour.**
 
-That creates the first end-to-end usable Project Index experience without risking the existing Register workflows.
+The ticket should:
+- extract timeline utilities, header, row/bar/milestone primitives, zoom controls and drag/resize logic
+- introduce a shared programme timeline view-model/interface
+- keep Reporting Programme-specific grid fields separate from the generic timeline engine
+- preserve current autosave, validation, zoom, snapping, bar movement and resize behaviour
+- avoid implementing Target Programme UI in the same ticket
+- require `npm run build`, `npm run lint` and `npm run test` (or document any pre-existing failures)
+- include manual verification that Reporting Programme still behaves as before
+
+After that ticket is accepted, the next ticket should establish/align programme definition metadata, project programme dates, summary membership, dependencies and Reporting-to-Target mappings before Target Programme stage UI is built.
