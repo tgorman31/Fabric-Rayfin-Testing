@@ -4,6 +4,7 @@ export interface ProgrammeTimelineItem {
   id: string;
   rowLabel: string;
   isEditable: boolean;
+  isMilestone?: boolean;
   startDate: string;
   endDate: string;
 }

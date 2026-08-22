@@ -2057,7 +2057,7 @@ export function ProjectIndexPage() {
                                     className="border-b border-slate-200 bg-white hover:bg-slate-50/70"
                                   >
                                     <ProgrammeTimelineRow
-                                      item={item}
+                                      item={{ ...item, isMilestone: false }}
                                       range={timelineRange}
                                       scale={timelineScale}
                                       dayWidth={timelineDayWidth}
