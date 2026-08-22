@@ -33,6 +33,11 @@ const summary = (guid: string): ProgrammeRuleDefinition => ({
   programmeArea: "target",
   rowType: "summary",
 });
+const reportingSummary = (guid: string): ProgrammeRuleDefinition => ({
+  guid,
+  programmeArea: "reporting",
+  rowType: "summary",
+});
 const reference = (guid: string): ProgrammeRuleDefinition => ({
   guid,
   programmeArea: "target",
@@ -96,6 +101,17 @@ describe("target summary rules", () => {
 
     expect(dates.get("inner")).toEqual({ targetStart: undefined, targetEnd: date(2025, 3, 4) });
     expect(dates.get("outer")).toEqual({ targetStart: undefined, targetEnd: date(2025, 3, 4) });
+  });
+
+  it("does not derive Reporting Programme summaries", () => {
+    const dates = deriveTargetSummaryDates(
+      [reportingSummary("reporting-summary"), activity("reporting-child", "reporting")],
+      [record("reporting-child", { targetStart: date(2025, 2, 1), targetEnd: date(2025, 2, 5) })],
+      [member("reporting-membership", "reporting-summary", "reporting-child")],
+    );
+
+    expect(dates.has("reporting-summary")).toBe(false);
+    expect(dates.size).toBe(0);
   });
 
   it("rejects cyclic summary membership", () => {

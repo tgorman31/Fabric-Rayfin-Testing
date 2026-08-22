@@ -503,10 +503,11 @@ export async function seedRepresentativeProgrammeRelationships(): Promise<{
   dependencies: DependencyDefinitionRecord[];
   mappings: ReportingMappingRecord[];
 }> {
-  const definitions = representativeProgrammeDefinitions.map((definition) => ({
+  const persistedDefinitions = await seedRepresentativeProgrammeDefinitions();
+  const definitions = persistedDefinitions.map((definition) => ({
     guid: definition.guid,
-    programmeArea: definition.programmeArea,
-    rowType: definition.rowType,
+    programmeArea: definition.programme_area as ProgrammeArea,
+    rowType: definition.row_type as ProgrammeRowType,
   }));
   validateSummaryMemberships(definitions, [...representativeSummaryMembers]);
   validateProgrammeDependencies(definitions, [...representativeDependencies]);
@@ -572,6 +573,8 @@ export async function seedRepresentativeProgrammeRelationships(): Promise<{
       if (
         existing.predecessor_item_definition_guid !== dependency.predecessorItemDefinitionGuid ||
         existing.successor_item_definition_guid !== dependency.successorItemDefinitionGuid ||
+        existing.dependency_type !== dependency.dependencyType ||
+        existing.lag_days !== dependency.lagDays ||
         existing.successor_field !== dependency.successorField
       ) {
         throw new Error(`Dependency GUID has conflicting semantics: ${dependency.guid}`);
@@ -613,7 +616,8 @@ export async function seedRepresentativeProgrammeRelationships(): Promise<{
         existing.reporting_item_definition_guid !== mapping.reportingItemDefinitionGuid ||
         existing.reporting_field !== mapping.reportingField ||
         existing.target_item_definition_guid !== mapping.targetItemDefinitionGuid ||
-        existing.target_field !== mapping.targetField
+        existing.target_field !== mapping.targetField ||
+        existing.reporting_reference_item_definition_guid !== mapping.reportingReferenceItemDefinitionGuid
       ) {
         throw new Error(`Reporting mapping GUID has conflicting semantics: ${mapping.guid}`);
       }

@@ -321,7 +321,9 @@ export function deriveTargetSummaryDates(
       const childDefinition = byDefinition.get(member.childItemDefinitionGuid);
       if (!childDefinition) continue;
       const childDates = childDefinition.rowType === "summary"
-        ? derive(childDefinition.guid)
+        ? childDefinition.programmeArea === "target"
+          ? derive(childDefinition.guid)
+          : undefined
         : recordsByDefinition.get(childDefinition.guid);
       const childStart = childDefinition.rowType === "milestone"
         ? undefined
@@ -340,7 +342,9 @@ export function deriveTargetSummaryDates(
   }
 
   for (const definition of definitions) {
-    if (definition.rowType === "summary") derive(definition.guid);
+    if (definition.programmeArea === "target" && definition.rowType === "summary") {
+      derive(definition.guid);
+    }
   }
   return result;
 }
