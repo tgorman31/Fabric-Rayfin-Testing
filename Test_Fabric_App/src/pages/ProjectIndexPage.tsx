@@ -11,6 +11,11 @@ import {
 import type { LatLngBoundsLiteral } from "leaflet";
 
 import { useAuth } from "@/hooks/AuthContext";
+import { ProgrammeTimelineHeader } from "@/components/programme/ProgrammeTimelineHeader";
+import { ProgrammeTimelineRow } from "@/components/programme/ProgrammeTimelineRow";
+import { ProgrammeZoomControls } from "@/components/programme/ProgrammeZoomControls";
+import { useProgrammeTimeline } from "@/hooks/useProgrammeTimeline";
+import { buildTimelineRange, clamp, getDurationLabel, getTimelineHeaderRows, getTimelinePlacement, TIMELINE_HEADER_ROW_HEIGHT } from "@/utils/programmeTimeline";
 import {
   createProjectTeamMember,
   deleteProjectTeamMember,
@@ -36,35 +41,6 @@ type MajorTab =
   | "board-report";
 type InfoSection = "summary" | "team";
 type ValidationState = Record<string, string | undefined>;
-
-type TimelineScale = "year" | "quarter" | "month" | "week" | "day";
-
-type TimelineRange = {
-  start: Date;
-  end: Date;
-  totalDays: number;
-};
-
-type TimelineSegment = {
-  key: string;
-  label: string;
-  spanDays: number;
-};
-
-type TimelineHeaderRow = {
-  scale: TimelineScale | "quarter";
-  tone: "top" | "mid" | "bottom";
-};
-
-type TimelineDragState = {
-  itemId: string;
-  mode: "resize" | "move";
-  edge?: "start" | "end";
-  rowLeft: number;
-  dayWidth: number;
-  grabOffsetDays?: number;
-  durationDays?: number;
-};
 
 type ReportingSectionGroup = {
   sectionCode: string;
@@ -147,24 +123,6 @@ const sectionThemes: Record<string, SectionTheme> = {
 const REPORTING_LEFT_GRID = "260px 72px 168px 168px 124px";
 const REPORTING_LEFT_WIDTH = 792;
 const REPORTING_TIMELINE_GAP = 16;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const TIMELINE_ZOOM_STEPS: Array<{
-  scale: TimelineScale;
-  dayWidth: number;
-  label: string;
-}> = [
-  { scale: "year", dayWidth: 1.5, label: "Year" },
-  { scale: "year", dayWidth: 2.25, label: "Year" },
-  { scale: "quarter", dayWidth: 3.25, label: "Quarter" },
-  { scale: "quarter", dayWidth: 4.5, label: "Quarter" },
-  { scale: "month", dayWidth: 7, label: "Month" },
-  { scale: "month", dayWidth: 9.5, label: "Month" },
-  { scale: "week", dayWidth: 14, label: "Week" },
-  { scale: "week", dayWidth: 19, label: "Week" },
-  { scale: "day", dayWidth: 26, label: "Day" },
-  { scale: "day", dayWidth: 34, label: "Day" },
-];
-const TIMELINE_HEADER_ROW_HEIGHT = 40;
 const MAP_MIN_LAT = 51.2;
 const MAP_MAX_LAT = 55.6;
 const MAP_MIN_LNG = -10.9;
@@ -243,255 +201,6 @@ function statusTone(saveState: SaveState) {
     default:
       return "text-slate-500";
   }
-}
-
-function startOfDay(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-function startOfMonth(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
-}
-
-function addMonths(date: Date, count: number): Date {
-  return new Date(date.getFullYear(), date.getMonth() + count, 1);
-}
-
-function addDays(date: Date, count: number): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + count);
-}
-
-function monthDiff(from: Date, to: Date): number {
-  return (
-    (to.getFullYear() - from.getFullYear()) * 12 +
-    (to.getMonth() - from.getMonth())
-  );
-}
-
-function dateFromInput(value: string): Date | null {
-  if (!value) return null;
-  return new Date(`${value}T00:00:00`);
-}
-
-function formatMonthLabel(date: Date): string {
-  return new Intl.DateTimeFormat("en-GB", { month: "short" }).format(date);
-}
-
-function endOfMonth(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0);
-}
-
-function startOfQuarter(date: Date): Date {
-  return new Date(date.getFullYear(), Math.floor(date.getMonth() / 3) * 3, 1);
-}
-
-function endOfQuarter(date: Date): Date {
-  return endOfMonth(
-    new Date(date.getFullYear(), Math.floor(date.getMonth() / 3) * 3 + 2, 1),
-  );
-}
-
-function startOfWeek(date: Date): Date {
-  const day = date.getDay();
-  const delta = day === 0 ? -6 : 1 - day;
-  return startOfDay(addDays(date, delta));
-}
-
-function endOfWeek(date: Date): Date {
-  return addDays(startOfWeek(date), 6);
-}
-
-function getDaysDiff(from: Date, to: Date): number {
-  return Math.round(
-    (startOfDay(to).getTime() - startOfDay(from).getTime()) / MS_PER_DAY,
-  );
-}
-
-function getDurationLabel(item: ReportingProgrammeItem): string {
-  const start = dateFromInput(item.startDate);
-  const end = dateFromInput(item.endDate);
-
-  if (!start && !end) return "—";
-  if (start && !end) return "1 mo";
-  if (!start && end) return "1 mo";
-
-  const months = Math.max(
-    1,
-    monthDiff(startOfMonth(start as Date), startOfMonth(end as Date)) + 1,
-  );
-  return `${months} mo`;
-}
-
-function buildTimelineRange(items: ReportingProgrammeItem[]): TimelineRange {
-  const dates = items
-    .flatMap((item) => [item.startDate, item.endDate])
-    .filter(Boolean)
-    .map((value) => dateFromInput(value as string))
-    .filter((value): value is Date => Boolean(value))
-    .sort((a, b) => a.getTime() - b.getTime());
-
-  const earliest = dates[0] ?? startOfDay(new Date());
-  const latest = dates[dates.length - 1] ?? addMonths(earliest, 7);
-  const start = startOfMonth(earliest);
-  const end = endOfMonth(latest);
-
-  return {
-    start,
-    end,
-    totalDays: getDaysDiff(start, end) + 1,
-  };
-}
-
-function getTimelinePlacement(
-  item: ReportingProgrammeItem,
-  timelineRange: TimelineRange,
-  dayWidth: number,
-): { left: number; width: number } | null {
-  const startSource =
-    dateFromInput(item.startDate) ?? dateFromInput(item.endDate);
-  const endSource =
-    dateFromInput(item.endDate) ?? dateFromInput(item.startDate);
-
-  if (!startSource || !endSource) return null;
-
-  const itemStart = startOfDay(startSource);
-  const itemEnd = startOfDay(endSource < startSource ? startSource : endSource);
-  const left = clamp(
-    getDaysDiff(timelineRange.start, itemStart) * dayWidth,
-    0,
-    timelineRange.totalDays * dayWidth,
-  );
-  const width = Math.max(
-    dayWidth,
-    (getDaysDiff(itemStart, itemEnd) + 1) * dayWidth,
-  );
-
-  return { left, width };
-}
-
-function buildTimelineSegments(
-  range: TimelineRange,
-  mode: TimelineScale | "quarter",
-): TimelineSegment[] {
-  const segments: TimelineSegment[] = [];
-  let cursor = startOfDay(range.start);
-
-  while (cursor <= range.end) {
-    let segmentStart = cursor;
-    let segmentEnd = cursor;
-    let label = "";
-
-    if (mode === "year") {
-      segmentStart = new Date(cursor.getFullYear(), 0, 1);
-      segmentEnd = new Date(cursor.getFullYear(), 11, 31);
-      label = String(cursor.getFullYear());
-    } else if (mode === "quarter") {
-      segmentStart = startOfQuarter(cursor);
-      segmentEnd = endOfQuarter(cursor);
-      label = `Q${Math.floor(cursor.getMonth() / 3) + 1}`;
-    } else if (mode === "month") {
-      segmentStart = startOfMonth(cursor);
-      segmentEnd = endOfMonth(cursor);
-      label = formatMonthLabel(cursor).toUpperCase();
-    } else if (mode === "week") {
-      segmentStart = startOfWeek(cursor);
-      segmentEnd = endOfWeek(cursor);
-      label = `W${Math.ceil((getDaysDiff(new Date(cursor.getFullYear(), 0, 1), cursor) + 1) / 7)}`;
-    } else {
-      segmentStart = startOfDay(cursor);
-      segmentEnd = startOfDay(cursor);
-      label = String(cursor.getDate()).padStart(2, "0");
-    }
-
-    const clampedStart =
-      segmentStart < range.start ? range.start : segmentStart;
-    const clampedEnd = segmentEnd > range.end ? range.end : segmentEnd;
-    const spanDays = getDaysDiff(clampedStart, clampedEnd) + 1;
-
-    segments.push({
-      key: `${mode}-${clampedStart.toISOString()}`,
-      label,
-      spanDays,
-    });
-
-    cursor = addDays(clampedEnd, 1);
-  }
-
-  return segments;
-}
-
-function getTimelineHeaderRows(scale: TimelineScale): TimelineHeaderRow[] {
-  switch (scale) {
-    case "year":
-      return [
-        { scale: "year", tone: "top" },
-        { scale: "quarter", tone: "bottom" },
-      ];
-    case "quarter":
-      return [
-        { scale: "year", tone: "top" },
-        { scale: "month", tone: "bottom" },
-      ];
-    case "month":
-      return [
-        { scale: "year", tone: "top" },
-        { scale: "quarter", tone: "mid" },
-        { scale: "month", tone: "bottom" },
-      ];
-    case "week":
-      return [
-        { scale: "year", tone: "top" },
-        { scale: "month", tone: "mid" },
-        { scale: "week", tone: "bottom" },
-      ];
-    case "day":
-      return [
-        { scale: "year", tone: "top" },
-        { scale: "month", tone: "mid" },
-        { scale: "day", tone: "bottom" },
-      ];
-  }
-}
-
-function getTimelineGridScale(scale: TimelineScale): TimelineScale | "quarter" {
-  return scale === "year" ? "quarter" : scale;
-}
-
-function getTimelineSnapDate(
-  date: Date,
-  scale: TimelineScale,
-  edge: "start" | "end",
-): Date {
-  if (scale === "year") {
-    return edge === "start" ? startOfQuarter(date) : endOfQuarter(date);
-  }
-  if (scale === "quarter") {
-    return edge === "start" ? startOfMonth(date) : endOfMonth(date);
-  }
-  if (scale === "month") {
-    return edge === "start" ? startOfWeek(date) : endOfWeek(date);
-  }
-  return startOfDay(date);
-}
-
-function clampDate(date: Date, min: Date, max: Date): Date {
-  return new Date(clamp(date.getTime(), min.getTime(), max.getTime()));
-}
-
-
-function snapTimelineMoveDate(date: Date, scale: TimelineScale): Date {
-  if (scale === "year") return startOfQuarter(date);
-  if (scale === "quarter") return startOfMonth(date);
-  if (scale === "month") return startOfWeek(date);
-  return startOfDay(date);
-}
-
-function formatDateInput(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
 }
 
 function extractCountyPrefix(siteCode: string): string {
@@ -651,152 +360,6 @@ function InlineSelect({
         </option>
       ))}
     </select>
-  );
-}
-
-function TimelineHeader({
-  range,
-  scale,
-  dayWidth,
-}: {
-  range: TimelineRange;
-  scale: TimelineScale;
-  dayWidth: number;
-}) {
-  const rows = useMemo(() => getTimelineHeaderRows(scale), [scale]);
-
-  return (
-    <div
-      className="border-l border-slate-200"
-      style={{ width: range.totalDays * dayWidth }}
-    >
-      {rows.map((row, rowIndex) => {
-        const segments = buildTimelineSegments(range, row.scale);
-        const toneClass =
-          row.tone === "top"
-            ? "bg-slate-100 text-[11px] tracking-[0.22em]"
-            : row.tone === "mid"
-              ? "bg-slate-50 text-[11px] tracking-[0.2em]"
-              : "bg-white text-xs tracking-[0.18em]";
-
-        return (
-          <div
-            key={`${row.scale}-${rowIndex}`}
-            className="flex border-b border-slate-200"
-          >
-            {segments.map((segment, segmentIndex) => (
-              <div
-                key={segment.key}
-                className={`flex items-center justify-center border-l border-slate-200 px-2 font-semibold uppercase whitespace-nowrap text-slate-500 first:border-l-0 ${toneClass} ${
-                  row.tone === "bottom" && segmentIndex % 2 === 0
-                    ? "bg-slate-50"
-                    : ""
-                }`}
-                style={{
-                  width: segment.spanDays * dayWidth,
-                  height: TIMELINE_HEADER_ROW_HEIGHT,
-                }}
-              >
-                {segment.label}
-              </div>
-            ))}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function TimelineRow({
-  item,
-  range,
-  scale,
-  dayWidth,
-  placement,
-  theme,
-  onResizeStart,
-  onMoveStart,
-}: {
-  item: ReportingProgrammeItem;
-  range: TimelineRange;
-  scale: TimelineScale;
-  dayWidth: number;
-  placement: { left: number; width: number } | null;
-  theme: SectionTheme;
-  onResizeStart: (
-    event: React.PointerEvent<HTMLButtonElement>,
-    item: ReportingProgrammeItem,
-    edge: "start" | "end",
-    rowElement: HTMLDivElement | null,
-  ) => void;
-  onMoveStart: (
-    event: React.PointerEvent<HTMLDivElement>,
-    item: ReportingProgrammeItem,
-    rowElement: HTMLDivElement | null,
-    dayWidth: number,
-  ) => void;
-}) {
-  const rowRef = useRef<HTMLDivElement | null>(null);
-  const segments = useMemo(
-    () => buildTimelineSegments(range, getTimelineGridScale(scale)),
-    [range, scale],
-  );
-
-  return (
-    <div
-      ref={rowRef}
-      className="relative h-21 overflow-hidden"
-      style={{ width: range.totalDays * dayWidth }}
-    >
-      <div className="flex h-full">
-        {segments.map((segment, index) => (
-          <div
-            key={segment.key}
-            className={`h-full border-l border-slate-200 first:border-l-0 ${
-              index % 2 === 0 ? "bg-slate-50/80" : "bg-white"
-            }`}
-            style={{ width: segment.spanDays * dayWidth }}
-          />
-        ))}
-      </div>
-      {placement ? (
-        <div className="absolute inset-0">
-          <div
-            className={`absolute top-1/2 h-11 -translate-y-1/2 rounded-full ${theme.railClass}`}
-            style={{ left: placement.left, width: placement.width }}
-          >
-            <div
-              onPointerDown={(event) =>
-                item.isEditable
-                  ? onMoveStart(event, item, rowRef.current, dayWidth)
-                  : undefined
-              }
-              className={`absolute inset-x-1.5 top-1/2 h-7 -translate-y-1/2 rounded-full bg-linear-to-r ${theme.barClass} shadow-sm ${item.isEditable ? "cursor-grab active:cursor-grabbing" : ""}`}
-            />
-            {item.isEditable ? (
-              <>
-                <button
-                  type="button"
-                  onPointerDown={(event) =>
-                    onResizeStart(event, item, "start", rowRef.current)
-                  }
-                  className="absolute left-1 top-1/2 h-7 w-3 -translate-y-1/2 cursor-ew-resize rounded-full border border-white/80 bg-white/90 shadow-sm"
-                  aria-label={`Adjust start date for ${item.rowLabel}`}
-                />
-                <button
-                  type="button"
-                  onPointerDown={(event) =>
-                    onResizeStart(event, item, "end", rowRef.current)
-                  }
-                  className="absolute right-1 top-1/2 h-7 w-3 -translate-y-1/2 cursor-ew-resize rounded-full border border-white/80 bg-white/90 shadow-sm"
-                  aria-label={`Adjust end date for ${item.rowLabel}`}
-                />
-              </>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-    </div>
   );
 }
 
@@ -1012,9 +575,6 @@ export function ProjectIndexPage() {
   const [visibleMapBounds, setVisibleMapBounds] = useState<MapBounds>(
     getDefaultMapBounds(),
   );
-  const [timelineZoomIndex, setTimelineZoomIndex] = useState(5);
-  const [timelineDragState, setTimelineDragState] =
-    useState<TimelineDragState | null>(null);
   const workspaceRef = useRef<ProjectIndexWorkspace | null>(null);
 
   const selectedProjectGuid = routeProjectGuid ?? null;
@@ -1139,340 +699,28 @@ export function ProjectIndexPage() {
     [workspace?.reportingProgramme],
   );
 
-  const timelineRange = useMemo(
-    () => buildTimelineRange(workspace?.reportingProgramme ?? []),
-    [workspace?.reportingProgramme],
-  );
-
-  const timelineZoomStep = TIMELINE_ZOOM_STEPS[timelineZoomIndex];
-  const timelineScale = timelineZoomStep.scale;
-  const timelineDayWidth = timelineZoomStep.dayWidth;
-  const timelineWidth = timelineRange.totalDays * timelineDayWidth;
-  const timelineHeaderHeight =
-    getTimelineHeaderRows(timelineScale).length * TIMELINE_HEADER_ROW_HEIGHT;
-
-  useEffect(() => {
-    if (!timelineDragState) return;
-
-    const dragState = timelineDragState;
-
-    function updateDraggedDate(clientX: number) {
-      const pointerDayIndex = clamp(
-        Math.round((clientX - dragState.rowLeft) / dragState.dayWidth),
-        0,
-        Math.max(0, timelineRange.totalDays - 1),
-      );
-
-      setWorkspace((current) => {
-        if (!current) return current;
-
-        return {
-          ...current,
-          reportingProgramme: current.reportingProgramme.map((item) => {
-            if (item.id !== dragState.itemId) return item;
-
-            const startSource =
-              dateFromInput(item.startDate) ?? dateFromInput(item.endDate);
-
-            const endSource =
-              dateFromInput(item.endDate) ?? dateFromInput(item.startDate);
-
-            if (!startSource || !endSource) return item;
-
-            /*
-             * MOVE THE WHOLE BAR
-             *
-             * Preserve its existing duration while changing both
-             * the start and end dates.
-             */
-            if (dragState.mode === "move") {
-              const durationDays =
-                dragState.durationDays ??
-                Math.max(0, getDaysDiff(startSource, endSource));
-
-              const rawStartIndex = clamp(
-                pointerDayIndex - (dragState.grabOffsetDays ?? 0),
-                0,
-                Math.max(
-                  0,
-                  timelineRange.totalDays - (durationDays + 1),
-                ),
-              );
-
-              const rawStartDate = addDays(
-                timelineRange.start,
-                rawStartIndex,
-              );
-
-              /*
-               * Movement precision depends on zoom:
-               *
-               * Year    -> quarter
-               * Quarter -> month
-               * Month   -> week
-               * Week    -> day
-               * Day     -> day
-               */
-              const snappedStartDate = snapTimelineMoveDate(
-                rawStartDate,
-                timelineScale,
-              );
-
-              const maxStartDate = addDays(
-                timelineRange.end,
-                -durationDays,
-              );
-
-              const clampedStartDate = clampDate(
-                snappedStartDate,
-                timelineRange.start,
-                maxStartDate < timelineRange.start
-                  ? timelineRange.start
-                  : maxStartDate,
-              );
-
-              const nextStart = formatDateInput(clampedStartDate);
-
-              const nextEnd = formatDateInput(
-                addDays(clampedStartDate, durationDays),
-              );
-
-              return {
-                ...item,
-                startDate: nextStart,
-                endDate: nextEnd,
-              };
-            }
-
-            /*
-             * RESIZE ONE END OF THE BAR
-             */
-            const targetDate = addDays(
-              timelineRange.start,
-              pointerDayIndex,
-            );
-
-            const snappedDate = clampDate(
-              getTimelineSnapDate(
-                targetDate,
-                timelineScale,
-                dragState.edge ?? "start",
-              ),
-              timelineRange.start,
-              timelineRange.end,
-            );
-
-            const nextValue = formatDateInput(snappedDate);
-
-            const startDate = item.startDate || item.endDate;
-            const endDate = item.endDate || item.startDate;
-
-            if (dragState.edge === "start") {
-              const safeEnd =
-                endDate && nextValue > endDate
-                  ? nextValue
-                  : endDate;
-
-              return {
-                ...item,
-                startDate: nextValue,
-                endDate: safeEnd,
-              };
-            }
-
-            const safeStart =
-              startDate && nextValue < startDate
-                ? nextValue
-                : startDate;
-
-            return {
-              ...item,
-              startDate: safeStart,
-              endDate: nextValue,
-            };
-          }),
-        };
+  const timelineRange = useMemo(() => buildTimelineRange(workspace?.reportingProgramme ?? []), [workspace?.reportingProgramme]);
+  const timeline = useProgrammeTimeline({
+    items: workspace?.reportingProgramme ?? [],
+    range: timelineRange,
+    onItemsChange: (items) => setWorkspace((current) => current ? { ...current, reportingProgramme: items } : current),
+    onCommit: (item) => {
+      void handleReportingSave(item.id, {
+        startDate: item.startDate,
+        endDate: item.endDate,
       });
-    }
+    },
+  });
+  const timelineZoomIndex = timeline.zoomIndex;
+  const setTimelineZoomIndex = timeline.setZoomIndex;
 
-    function handlePointerMove(event: PointerEvent) {
-      event.preventDefault();
-      updateDraggedDate(event.clientX);
-    }
-
-    function handlePointerUp() {
-      const currentItem =
-        workspaceRef.current?.reportingProgramme.find(
-          (item) => item.id === dragState.itemId,
-        );
-
-      if (currentItem) {
-        setSaveState("saving");
-
-        void updateReportingProgrammeItem(dragState.itemId, {
-          startDate: currentItem.startDate,
-          endDate: currentItem.endDate,
-        })
-          .then(() => {
-            setWorkspace((current) =>
-              current
-                ? {
-                    ...current,
-                    summary: {
-                      ...current.summary,
-                      lastEditedBy:
-                        user?.email ??
-                        current.summary.lastEditedBy,
-                      lastUpdatedAt:
-                        new Intl.DateTimeFormat("en-GB", {
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                        }).format(new Date()),
-                    },
-                  }
-                : current,
-            );
-
-            setSaveState("saved");
-          })
-          .catch((err) => {
-            setSaveState("error");
-
-            setError(
-              err instanceof Error
-                ? err.message
-                : "Unable to save reporting item.",
-            );
-          });
-      }
-
-      setTimelineDragState(null);
-    }
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp, {
-      once: true,
-    });
-
-    return () => {
-      window.removeEventListener(
-        "pointermove",
-        handlePointerMove,
-      );
-
-      window.removeEventListener(
-        "pointerup",
-        handlePointerUp,
-      );
-    };
-  }, [
-    timelineDragState,
-    timelineRange,
-    timelineScale,
-    user?.email,
-  ]);
+  const timelineScale = timeline.timelineScale;
+  const timelineDayWidth = timeline.timelineDayWidth;
+  const timelineWidth = timelineRange.totalDays * timelineDayWidth;
+  const timelineHeaderHeight = getTimelineHeaderRows(timelineScale).length * TIMELINE_HEADER_ROW_HEIGHT;
 
   function openProject(projectGuid: string) {
     navigate(`/project-index/${projectGuid}`);
-  }
-
-  function beginTimelineResize(
-    event: React.PointerEvent<HTMLButtonElement>,
-    item: ReportingProgrammeItem,
-    edge: "start" | "end",
-    rowElement: HTMLDivElement | null,
-  ) {
-    if (
-      !item.isEditable ||
-      !rowElement ||
-      timelineRange.totalDays === 0
-    ) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    const rect = rowElement.getBoundingClientRect();
-
-    setTimelineDragState({
-      itemId: item.id,
-      mode: "resize",
-      edge,
-      rowLeft: rect.left,
-      dayWidth: rect.width / timelineRange.totalDays,
-    });
-  }
-
-  function beginTimelineMove(
-    event: React.PointerEvent<HTMLDivElement>,
-    item: ReportingProgrammeItem,
-    rowElement: HTMLDivElement | null,
-    dayWidth: number,
-  ) {
-    if (
-      !item.isEditable ||
-      !rowElement ||
-      timelineRange.totalDays === 0
-    ) {
-      return;
-    }
-
-    const startSource =
-      dateFromInput(item.startDate) ??
-      dateFromInput(item.endDate);
-
-    const endSource =
-      dateFromInput(item.endDate) ??
-      dateFromInput(item.startDate);
-
-    if (!startSource || !endSource) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    const rect = rowElement.getBoundingClientRect();
-
-    const pointerDayIndex = clamp(
-      Math.round((event.clientX - rect.left) / dayWidth),
-      0,
-      Math.max(0, timelineRange.totalDays - 1),
-    );
-
-    const itemStartIndex = clamp(
-      getDaysDiff(timelineRange.start, startSource),
-      0,
-      Math.max(0, timelineRange.totalDays - 1),
-    );
-
-    const durationDays = Math.max(
-      0,
-      getDaysDiff(startSource, endSource),
-    );
-
-    /*
-     * Remember where inside the bar the user grabbed it.
-     *
-     * This stops the bar "jumping" so that its start date
-     * suddenly appears underneath the pointer.
-     */
-    const grabOffsetDays = clamp(
-      pointerDayIndex - itemStartIndex,
-      0,
-      durationDays,
-    );
-
-    setTimelineDragState({
-      itemId: item.id,
-      mode: "move",
-      rowLeft: rect.left,
-      dayWidth,
-      grabOffsetDays,
-      durationDays,
-    });
   }
 
   async function saveSummaryField(
@@ -2529,51 +1777,10 @@ export function ProjectIndexPage() {
                         Zoom
                       </span>
 
-                      <div className="flex items-center rounded-full border border-slate-300 bg-white p-1 shadow-sm">
-                        <button
-                          type="button"
-                          disabled={timelineZoomIndex === 0}
-                          onClick={() =>
-                            setTimelineZoomIndex((current) =>
-                              Math.max(0, current - 1),
-                            )
-                          }
-                          className="flex h-9 w-9 items-center justify-center rounded-full text-lg font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300"
-                          aria-label="Zoom timeline out"
-                        >
-                          −
-                        </button>
-
-                        <div className="min-w-24 px-3 text-center">
-                          <div className="text-sm font-semibold text-slate-700">
-                            {timelineZoomStep.label}
-                          </div>
-
-                          <div className="text-[10px] uppercase tracking-[0.15em] text-slate-400">
-                            {timelineZoomIndex + 1} / {TIMELINE_ZOOM_STEPS.length}
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          disabled={
-                            timelineZoomIndex ===
-                            TIMELINE_ZOOM_STEPS.length - 1
-                          }
-                          onClick={() =>
-                            setTimelineZoomIndex((current) =>
-                              Math.min(
-                                TIMELINE_ZOOM_STEPS.length - 1,
-                                current + 1,
-                              ),
-                            )
-                          }
-                          className="flex h-9 w-9 items-center justify-center rounded-full text-lg font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300"
-                          aria-label="Zoom timeline in"
-                        >
-                          +
-                        </button>
-                      </div>
+                      <ProgrammeZoomControls
+                        zoomIndex={timelineZoomIndex}
+                        onZoomChange={setTimelineZoomIndex}
+                      />
                     </div>
                   </div>
                 </div>
@@ -2814,7 +2021,7 @@ export function ProjectIndexPage() {
                             height: timelineHeaderHeight,
                           }}
                         >
-                          <TimelineHeader
+                          <ProgrammeTimelineHeader
                             range={timelineRange}
                             scale={timelineScale}
                             dayWidth={timelineDayWidth}
@@ -2849,15 +2056,15 @@ export function ProjectIndexPage() {
                                     key={item.id}
                                     className="border-b border-slate-200 bg-white hover:bg-slate-50/70"
                                   >
-                                    <TimelineRow
-                                      item={item}
+                                    <ProgrammeTimelineRow
+                                      item={{ ...item, isMilestone: false }}
                                       range={timelineRange}
                                       scale={timelineScale}
                                       dayWidth={timelineDayWidth}
                                       placement={placement}
                                       theme={theme}
-                                      onResizeStart={beginTimelineResize}
-                                      onMoveStart={beginTimelineMove}
+                                      onResizeStart={timeline.beginResize}
+                                      onMoveStart={timeline.beginMove}
                                     />
                                   </div>
                                 );
