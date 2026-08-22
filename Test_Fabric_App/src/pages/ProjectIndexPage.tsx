@@ -13,8 +13,9 @@ import type { LatLngBoundsLiteral } from "leaflet";
 import { useAuth } from "@/hooks/AuthContext";
 import { ProgrammeTimelineHeader } from "@/components/programme/ProgrammeTimelineHeader";
 import { ProgrammeTimelineRow } from "@/components/programme/ProgrammeTimelineRow";
+import { ProgrammeZoomControls } from "@/components/programme/ProgrammeZoomControls";
 import { useProgrammeTimeline } from "@/hooks/useProgrammeTimeline";
-import { buildTimelineRange, clamp, getDurationLabel, getTimelineHeaderRows, getTimelinePlacement, TIMELINE_HEADER_ROW_HEIGHT, TIMELINE_ZOOM_STEPS } from "@/utils/programmeTimeline";
+import { buildTimelineRange, clamp, getDurationLabel, getTimelineHeaderRows, getTimelinePlacement, TIMELINE_HEADER_ROW_HEIGHT } from "@/utils/programmeTimeline";
 import {
   createProjectTeamMember,
   deleteProjectTeamMember,
@@ -712,7 +713,7 @@ export function ProjectIndexPage() {
   });
   const timelineZoomIndex = timeline.zoomIndex;
   const setTimelineZoomIndex = timeline.setZoomIndex;
-  const timelineZoomStep = TIMELINE_ZOOM_STEPS[timelineZoomIndex];
+
   const timelineScale = timeline.timelineScale;
   const timelineDayWidth = timeline.timelineDayWidth;
   const timelineWidth = timelineRange.totalDays * timelineDayWidth;
@@ -1776,51 +1777,10 @@ export function ProjectIndexPage() {
                         Zoom
                       </span>
 
-                      <div className="flex items-center rounded-full border border-slate-300 bg-white p-1 shadow-sm">
-                        <button
-                          type="button"
-                          disabled={timelineZoomIndex === 0}
-                          onClick={() =>
-                            setTimelineZoomIndex((current) =>
-                              Math.max(0, current - 1),
-                            )
-                          }
-                          className="flex h-9 w-9 items-center justify-center rounded-full text-lg font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300"
-                          aria-label="Zoom timeline out"
-                        >
-                          −
-                        </button>
-
-                        <div className="min-w-24 px-3 text-center">
-                          <div className="text-sm font-semibold text-slate-700">
-                            {timelineZoomStep.label}
-                          </div>
-
-                          <div className="text-[10px] uppercase tracking-[0.15em] text-slate-400">
-                            {timelineZoomIndex + 1} / {TIMELINE_ZOOM_STEPS.length}
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          disabled={
-                            timelineZoomIndex ===
-                            TIMELINE_ZOOM_STEPS.length - 1
-                          }
-                          onClick={() =>
-                            setTimelineZoomIndex((current) =>
-                              Math.min(
-                                TIMELINE_ZOOM_STEPS.length - 1,
-                                current + 1,
-                              ),
-                            )
-                          }
-                          className="flex h-9 w-9 items-center justify-center rounded-full text-lg font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300"
-                          aria-label="Zoom timeline in"
-                        >
-                          +
-                        </button>
-                      </div>
+                      <ProgrammeZoomControls
+                        zoomIndex={timelineZoomIndex}
+                        onZoomChange={setTimelineZoomIndex}
+                      />
                     </div>
                   </div>
                 </div>
