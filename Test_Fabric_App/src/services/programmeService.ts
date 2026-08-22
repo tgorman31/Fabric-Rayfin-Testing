@@ -1,7 +1,18 @@
 import type { master_project_register } from "../../rayfin/data/master_project_register";
+import type { programme_dependency_definition } from "../../rayfin/data/programme_dependency_definition";
 import type { programme_item_definition } from "../../rayfin/data/programme_item_definition";
+import type { programme_reporting_mapping } from "../../rayfin/data/programme_reporting_mapping";
+import type { programme_summary_member } from "../../rayfin/data/programme_summary_member";
 import type { project_programme } from "../../rayfin/data/project_programme";
 
+import {
+  resolveReportingMappings,
+  validateProgrammeDependencies,
+  validateSummaryMemberships,
+  type DependencyDefinition,
+  type ReportingMapping,
+  type SummaryMembership,
+} from "@/domain/programmeRules";
 import { getRayfinClient } from "./rayfinClient";
 
 export type ProgrammeArea = "reporting" | "target";
@@ -80,6 +91,46 @@ export type ProgrammeDefinitionSeed = {
   isEditable: boolean;
   isDerived: boolean;
 };
+
+export type SummaryMemberRecord = Pick<
+  programme_summary_member,
+  | "id"
+  | "guid"
+  | "summary_item_definition_guid"
+  | "child_item_definition_guid"
+  | "sort_order"
+  | "is_active"
+  | "effective_from"
+  | "effective_to"
+>;
+
+export type DependencyDefinitionRecord = Pick<
+  programme_dependency_definition,
+  | "id"
+  | "guid"
+  | "predecessor_item_definition_guid"
+  | "successor_item_definition_guid"
+  | "dependency_type"
+  | "lag_days"
+  | "successor_field"
+  | "is_active"
+  | "effective_from"
+  | "effective_to"
+>;
+
+export type ReportingMappingRecord = Pick<
+  programme_reporting_mapping,
+  | "id"
+  | "guid"
+  | "reporting_item_definition_guid"
+  | "reporting_field"
+  | "target_item_definition_guid"
+  | "target_field"
+  | "reporting_reference_item_definition_guid"
+  | "is_active"
+  | "effective_from"
+  | "effective_to"
+>;
 
 /**
  * Representative development configuration only; this is not the final catalogue.
@@ -180,6 +231,46 @@ export const representativeProgrammeDefinitions: readonly ProgrammeDefinitionSee
   },
 ];
 
+export const representativeSummaryMembers: readonly SummaryMembership[] = [
+  {
+    guid: "30000000-0000-4000-8000-000000000001",
+    summaryItemDefinitionGuid: "20000000-0000-4000-8000-000000000003",
+    childItemDefinitionGuid: "20000000-0000-4000-8000-000000000001",
+    sortOrder: 1,
+    isActive: true,
+  },
+  {
+    guid: "30000000-0000-4000-8000-000000000002",
+    summaryItemDefinitionGuid: "20000000-0000-4000-8000-000000000003",
+    childItemDefinitionGuid: "20000000-0000-4000-8000-000000000002",
+    sortOrder: 2,
+    isActive: true,
+  },
+];
+
+export const representativeDependencies: readonly DependencyDefinition[] = [
+  {
+    guid: "40000000-0000-4000-8000-000000000001",
+    predecessorItemDefinitionGuid: "20000000-0000-4000-8000-000000000001",
+    successorItemDefinitionGuid: "20000000-0000-4000-8000-000000000002",
+    dependencyType: "FS",
+    lagDays: 0,
+    successorField: "target_end",
+    isActive: true,
+  },
+];
+
+export const representativeReportingMappings: readonly ReportingMapping[] = [
+  {
+    guid: "50000000-0000-4000-8000-000000000001",
+    reportingItemDefinitionGuid: "10000000-0000-4000-8000-000000000001",
+    reportingField: "reporting_end",
+    targetItemDefinitionGuid: "20000000-0000-4000-8000-000000000001",
+    targetField: "target_end",
+    reportingReferenceItemDefinitionGuid: "20000000-0000-4000-8000-000000000004",
+  },
+];
+
 const PROGRAMME_DEFINITION_FIELDS = [
   "id",
   "guid",
@@ -207,6 +298,43 @@ async function assertActiveProject(projectGuid: string): Promise<void> {
     throw new Error("Programme records require an active project.");
   }
 }
+
+const SUMMARY_MEMBER_FIELDS = [
+  "id",
+  "guid",
+  "summary_item_definition_guid",
+  "child_item_definition_guid",
+  "sort_order",
+  "is_active",
+  "effective_from",
+  "effective_to",
+] as const;
+
+const DEPENDENCY_FIELDS = [
+  "id",
+  "guid",
+  "predecessor_item_definition_guid",
+  "successor_item_definition_guid",
+  "dependency_type",
+  "lag_days",
+  "successor_field",
+  "is_active",
+  "effective_from",
+  "effective_to",
+] as const;
+
+const REPORTING_MAPPING_FIELDS = [
+  "id",
+  "guid",
+  "reporting_item_definition_guid",
+  "reporting_field",
+  "target_item_definition_guid",
+  "target_field",
+  "reporting_reference_item_definition_guid",
+  "is_active",
+  "effective_from",
+  "effective_to",
+] as const;
 
 const PROJECT_PROGRAMME_FIELDS = [
   "id",
@@ -344,6 +472,184 @@ export async function listActiveProgrammeDefinitions(options: {
         left.stage_code.localeCompare(right.stage_code) ||
         left.sort_order - right.sort_order,
     );
+}
+
+export async function listActiveSummaryMembers(): Promise<SummaryMemberRecord[]> {
+  return getRayfinClient()
+    .data.programme_summary_member.select(SUMMARY_MEMBER_FIELDS)
+    .where({ is_active: { eq: true } })
+    .first(-1)
+    .execute();
+}
+
+export async function listActiveDependencyDefinitions(): Promise<DependencyDefinitionRecord[]> {
+  return getRayfinClient()
+    .data.programme_dependency_definition.select(DEPENDENCY_FIELDS)
+    .where({ is_active: { eq: true } })
+    .first(-1)
+    .execute();
+}
+
+export async function listActiveReportingMappings(): Promise<ReportingMappingRecord[]> {
+  return getRayfinClient()
+    .data.programme_reporting_mapping.select(REPORTING_MAPPING_FIELDS)
+    .where({ is_active: { eq: true } })
+    .first(-1)
+    .execute();
+}
+
+export async function seedRepresentativeProgrammeRelationships(): Promise<{
+  summaryMembers: SummaryMemberRecord[];
+  dependencies: DependencyDefinitionRecord[];
+  mappings: ReportingMappingRecord[];
+}> {
+  const persistedDefinitions = await seedRepresentativeProgrammeDefinitions();
+  const definitions = persistedDefinitions.map((definition) => ({
+    guid: definition.guid,
+    programmeArea: definition.programme_area as ProgrammeArea,
+    rowType: definition.row_type as ProgrammeRowType,
+  }));
+  validateSummaryMemberships(definitions, [...representativeSummaryMembers]);
+  validateProgrammeDependencies(definitions, [...representativeDependencies]);
+  resolveReportingMappings(
+    definitions,
+    [],
+    [...representativeReportingMappings],
+  );
+
+  const user = getCurrentUser();
+  const now = new Date();
+  const seededSummaryMembers: SummaryMemberRecord[] = [];
+  const seededDependencies: DependencyDefinitionRecord[] = [];
+  const seededMappings: ReportingMappingRecord[] = [];
+  const summaryMembers = await listActiveSummaryMembers();
+  const dependencies = await listActiveDependencyDefinitions();
+  const mappings = await listActiveReportingMappings();
+
+  for (const member of representativeSummaryMembers) {
+    const existing = summaryMembers.find((record) => record.guid === member.guid) ??
+      summaryMembers.find(
+        (record) =>
+          record.summary_item_definition_guid === member.summaryItemDefinitionGuid &&
+          record.child_item_definition_guid === member.childItemDefinitionGuid,
+      );
+    if (existing) {
+      if (
+        existing.summary_item_definition_guid !== member.summaryItemDefinitionGuid ||
+        existing.child_item_definition_guid !== member.childItemDefinitionGuid
+      ) {
+        throw new Error(`Summary member GUID has conflicting semantics: ${member.guid}`);
+      }
+      seededSummaryMembers.push(existing);
+      continue;
+    }
+    const created = await getRayfinClient().data.programme_summary_member.create({
+      id: member.guid,
+      guid: member.guid,
+      summary_item_definition_guid: member.summaryItemDefinitionGuid,
+      child_item_definition_guid: member.childItemDefinitionGuid,
+      sort_order: member.sortOrder,
+      is_active: true,
+      effective_from: now,
+      created_at: now,
+      created_by_user_id: user.id,
+      created_by_user_email: user.email,
+      updated_at: now,
+      updated_by_user_id: user.id,
+      updated_by_user_email: user.email,
+    });
+    seededSummaryMembers.push(created);
+  }
+
+  for (const dependency of representativeDependencies) {
+    const existing = dependencies.find((record) => record.guid === dependency.guid) ??
+      dependencies.find(
+        (record) =>
+          record.predecessor_item_definition_guid === dependency.predecessorItemDefinitionGuid &&
+          record.successor_item_definition_guid === dependency.successorItemDefinitionGuid &&
+          record.successor_field === dependency.successorField,
+      );
+    if (existing) {
+      if (
+        existing.predecessor_item_definition_guid !== dependency.predecessorItemDefinitionGuid ||
+        existing.successor_item_definition_guid !== dependency.successorItemDefinitionGuid ||
+        existing.dependency_type !== dependency.dependencyType ||
+        existing.lag_days !== dependency.lagDays ||
+        existing.successor_field !== dependency.successorField
+      ) {
+        throw new Error(`Dependency GUID has conflicting semantics: ${dependency.guid}`);
+      }
+      seededDependencies.push(existing);
+      continue;
+    }
+    const created = await getRayfinClient().data.programme_dependency_definition.create({
+      id: dependency.guid,
+      guid: dependency.guid,
+      predecessor_item_definition_guid: dependency.predecessorItemDefinitionGuid,
+      successor_item_definition_guid: dependency.successorItemDefinitionGuid,
+      dependency_type: dependency.dependencyType,
+      lag_days: dependency.lagDays,
+      successor_field: dependency.successorField,
+      is_active: true,
+      effective_from: now,
+      created_at: now,
+      created_by_user_id: user.id,
+      created_by_user_email: user.email,
+      updated_at: now,
+      updated_by_user_id: user.id,
+      updated_by_user_email: user.email,
+    });
+    seededDependencies.push(created);
+  }
+
+  for (const mapping of representativeReportingMappings) {
+    const existing = mappings.find((record) => record.guid === mapping.guid) ??
+      mappings.find(
+        (record) =>
+          record.reporting_item_definition_guid === mapping.reportingItemDefinitionGuid &&
+          record.reporting_field === mapping.reportingField &&
+          record.target_item_definition_guid === mapping.targetItemDefinitionGuid &&
+          record.target_field === mapping.targetField,
+      );
+    if (existing) {
+      if (
+        existing.reporting_item_definition_guid !== mapping.reportingItemDefinitionGuid ||
+        existing.reporting_field !== mapping.reportingField ||
+        existing.target_item_definition_guid !== mapping.targetItemDefinitionGuid ||
+        existing.target_field !== mapping.targetField ||
+        existing.reporting_reference_item_definition_guid !== mapping.reportingReferenceItemDefinitionGuid
+      ) {
+        throw new Error(`Reporting mapping GUID has conflicting semantics: ${mapping.guid}`);
+      }
+      seededMappings.push(existing);
+      continue;
+    }
+    const created = await getRayfinClient().data.programme_reporting_mapping.create({
+      id: mapping.guid,
+      guid: mapping.guid,
+      reporting_item_definition_guid: mapping.reportingItemDefinitionGuid,
+      reporting_field: mapping.reportingField,
+      target_item_definition_guid: mapping.targetItemDefinitionGuid,
+      target_field: mapping.targetField,
+      reporting_reference_item_definition_guid:
+        mapping.reportingReferenceItemDefinitionGuid,
+      is_active: true,
+      effective_from: now,
+      created_at: now,
+      created_by_user_id: user.id,
+      created_by_user_email: user.email,
+      updated_at: now,
+      updated_by_user_id: user.id,
+      updated_by_user_email: user.email,
+    });
+    seededMappings.push(created);
+  }
+
+  return {
+    summaryMembers: seededSummaryMembers,
+    dependencies: seededDependencies,
+    mappings: seededMappings,
+  };
 }
 
 export async function listProjectProgrammeRecords(
