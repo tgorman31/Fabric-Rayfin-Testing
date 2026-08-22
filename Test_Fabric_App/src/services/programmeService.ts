@@ -257,6 +257,69 @@ export function applyProgrammeDatePatch(
   return { ...current, ...patch };
 }
 
+export async function seedRepresentativeProgrammeDefinitions(): Promise<
+  ProgrammeDefinitionRecord[]
+> {
+  const client = getRayfinClient().data.programme_item_definition;
+  const user = getCurrentUser();
+  const now = new Date();
+  const seeded: ProgrammeDefinitionRecord[] = [];
+
+  for (const definition of representativeProgrammeDefinitions) {
+    const existingByCode = await client
+      .select(PROGRAMME_DEFINITION_FIELDS)
+      .where({ item_code: { eq: definition.itemCode } })
+      .findFirst();
+    const existingByGuid = await client
+      .select(PROGRAMME_DEFINITION_FIELDS)
+      .where({ guid: { eq: definition.guid } })
+      .findFirst();
+    const existing = existingByCode ?? existingByGuid;
+
+    if (existingByCode && existingByCode.guid !== definition.guid) {
+      throw new Error(
+        `Programme definition code already belongs to another GUID: ${definition.itemCode}`,
+      );
+    }
+    if (existingByGuid && existingByGuid.item_code !== definition.itemCode) {
+      throw new Error(
+        `Programme definition GUID already belongs to another code: ${definition.guid}`,
+      );
+    }
+
+    if (existing) {
+      seeded.push(existing);
+      continue;
+    }
+
+    const id = definition.guid;
+    const created = await client.create({
+      id,
+      guid: definition.guid,
+      item_code: definition.itemCode,
+      programme_area: definition.programmeArea,
+      stage_code: definition.stageCode,
+      row_label: definition.rowLabel,
+      row_type: definition.rowType,
+      sort_order: definition.sortOrder,
+      level_code: definition.levelCode,
+      is_active: true,
+      is_editable: definition.isEditable,
+      is_derived: definition.isDerived,
+      effective_from: now,
+      created_at: now,
+      created_by_user_id: user.id,
+      created_by_user_email: user.email,
+      updated_at: now,
+      updated_by_user_id: user.id,
+      updated_by_user_email: user.email,
+    });
+    seeded.push(created);
+  }
+
+  return seeded;
+}
+
 export async function listActiveProgrammeDefinitions(options: {
   programmeArea?: ProgrammeArea;
   stageCode?: string;
