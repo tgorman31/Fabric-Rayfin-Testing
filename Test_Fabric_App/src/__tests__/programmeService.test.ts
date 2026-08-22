@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   applyProgrammeDatePatch,
   findDuplicateProjectProgrammeRecord,
+  representativeDependencies,
+  representativeReportingMappings,
   representativeProgrammeDefinitions,
+  representativeSummaryMembers,
 } from "@/services/programmeService";
 
 describe("programme domain foundation", () => {
@@ -19,6 +22,19 @@ describe("programme domain foundation", () => {
     expect(rowTypes).toEqual(
       new Set(["activity", "milestone", "summary", "reporting_reference"]),
     );
+  });
+
+  it("provides valid representative relationship configuration", () => {
+    expect(representativeSummaryMembers).toHaveLength(2);
+    expect(representativeSummaryMembers.every((member) => member.summaryItemDefinitionGuid === "20000000-0000-4000-8000-000000000003")).toBe(true);
+    expect(representativeDependencies).toEqual([
+      expect.objectContaining({ dependencyType: "FS", lagDays: 0, successorField: "target_end" }),
+    ]);
+    expect(representativeReportingMappings[0]).toMatchObject({
+      reportingItemDefinitionGuid: "10000000-0000-4000-8000-000000000001",
+      targetItemDefinitionGuid: "20000000-0000-4000-8000-000000000001",
+      reportingReferenceItemDefinitionGuid: "20000000-0000-4000-8000-000000000004",
+    });
   });
 
   it("detects duplicate project and definition instances", () => {
