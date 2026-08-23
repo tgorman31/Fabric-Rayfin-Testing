@@ -12,3 +12,14 @@ export function normalizeProgrammeAdminEmail(email: string): string {
   if (!normalized) throw new Error("Bootstrap Admin email is required.");
   return normalized;
 }
+
+export function isProgrammeAdminBootstrapEligible(input: {
+  isDevelopment: boolean;
+  configuredEmail?: string;
+  currentUserEmail?: string;
+}): boolean {
+  if (!input.isDevelopment || !input.configuredEmail?.trim() || !input.currentUserEmail?.trim()) {
+    return false;
+  }
+  return normalizeProgrammeAdminEmail(input.configuredEmail) === normalizeProgrammeAdminEmail(input.currentUserEmail);
+}

@@ -4,7 +4,10 @@ import type { programme_item_definition } from "../../rayfin/data/programme_item
 import type { programme_reporting_mapping } from "../../rayfin/data/programme_reporting_mapping";
 import type { programme_summary_member } from "../../rayfin/data/programme_summary_member";
 
-import { normalizeProgrammeAdminEmail } from "@/domain/programmeAdminAuth";
+import {
+  isProgrammeAdminBootstrapEligible,
+  normalizeProgrammeAdminEmail,
+} from "@/domain/programmeAdminAuth";
 import {
   isProgrammeAdminRoleEffective,
   validateDefinitionCandidate,
@@ -90,16 +93,20 @@ export async function assertProgrammeAdminAccess(): Promise<void> {
   if (!(await getProgrammeAdminAccess())) throw new Error("Programme Admin access is required.");
 }
 
-function bootstrapAuditUser(email: string): { id: string; email: string } {
+export async function bootstrapCurrentUserProgrammeAdmin(): Promise<RoleRecord> {
   const session = getRayfinClient().auth.getSession();
-  if (session.isAuthenticated && session.user) {
-    return { id: session.user.id, email: session.user.email };
+  if (!session.isAuthenticated || !session.user) {
+    throw new Error("Programme Admin bootstrap requires an authenticated current user.");
   }
-  return { id: "programme-admin-bootstrap", email };
-}
+  if (!isProgrammeAdminBootstrapEligible({
+    isDevelopment: import.meta.env.DEV,
+    configuredEmail: import.meta.env.VITE_PROGRAMME_ADMIN_BOOTSTRAP_EMAIL,
+    currentUserEmail: session.user.email,
+  })) {
+    throw new Error("Current user is not eligible for development Programme Admin bootstrap.");
+  }
 
-export async function ensureProgrammeAdminRole(email: string): Promise<RoleRecord> {
-  const normalizedEmail = normalizeProgrammeAdminEmail(email);
+  const normalizedEmail = normalizeProgrammeAdminEmail(session.user.email);
   const matchingRoles = await getRayfinClient().data.app_user_role.select(ROLE_FIELDS)
     .where({ user_email: { eq: normalizedEmail }, role_code: { eq: "project_index_admin" } })
     .first(-1)
@@ -112,7 +119,6 @@ export async function ensureProgrammeAdminRole(email: string): Promise<RoleRecor
   }));
   if (existing) return existing;
 
-  const operator = bootstrapAuditUser(normalizedEmail);
   const now = new Date();
   const effectiveFrom = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const id = crypto.randomUUID();
@@ -124,8 +130,8 @@ export async function ensureProgrammeAdminRole(email: string): Promise<RoleRecor
     active_flag: true,
     effective_from: effectiveFrom,
     created_at: now,
-    created_by_user_id: operator.id,
-    created_by_user_email: operator.email,
+    created_by_user_id: session.user.id,
+    created_by_user_email: session.user.email,
   });
 }
 

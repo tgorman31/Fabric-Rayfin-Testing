@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeProgrammeAdminEmail } from "@/domain/programmeAdminAuth";
+import {
+  isProgrammeAdminBootstrapEligible,
+  normalizeProgrammeAdminEmail,
+} from "@/domain/programmeAdminAuth";
 import {
   isProgrammeAdminRoleEffective,
   validateDefinitionCandidate,
@@ -95,6 +98,17 @@ describe("programme Admin relationship rules", () => {
     expect(() => validateProgrammeConfiguration(config({ definitions: [activity, reporting, reference], reportingMappings: [mapping, { ...mapping, guid: "mapping-2" }] }))).toThrow("Duplicate active reporting mapping");
     expect(() => validateProgrammeConfiguration(config({ definitions: [activity, reporting, milestone], reportingMappings: [{ ...mapping, targetItemDefinitionGuid: "milestone", targetField: "target_start", reportingReferenceItemDefinitionGuid: undefined }] }))).toThrow("Milestones cannot provide target_start");
     expect(() => validateProgrammeConfiguration(config({ definitions: [activity, reporting], reportingMappings: [{ ...mapping, reportingReferenceItemDefinitionGuid: "activity" }] }))).toThrow("reference must be a target reporting_reference");
+  });
+});
+
+describe("programme Admin bootstrap eligibility", () => {
+  it("requires development mode and an exact normalized current-user email match", () => {
+    const input = { isDevelopment: true, configuredEmail: " Owner@Example.COM ", currentUserEmail: "owner@example.com" };
+    expect(isProgrammeAdminBootstrapEligible(input)).toBe(true);
+    expect(isProgrammeAdminBootstrapEligible({ ...input, currentUserEmail: "other@example.com" })).toBe(false);
+    expect(isProgrammeAdminBootstrapEligible({ ...input, configuredEmail: "" })).toBe(false);
+    expect(isProgrammeAdminBootstrapEligible({ ...input, currentUserEmail: undefined })).toBe(false);
+    expect(isProgrammeAdminBootstrapEligible({ ...input, isDevelopment: false })).toBe(false);
   });
 });
 
