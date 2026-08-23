@@ -135,8 +135,14 @@ export type ProgrammeAdminRoleCandidate = {
 };
 
 function dateOnly(value: Date | string): Date {
-  const date = new Date(value);
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  if (typeof value === "string") {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) {
+      throw new Error(`Unsupported role effective date format: ${value}`);
+    }
+    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  }
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate());
 }
 
 export function isProgrammeAdminRoleEffective(

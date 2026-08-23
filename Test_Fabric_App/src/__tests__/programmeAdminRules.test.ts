@@ -98,13 +98,16 @@ describe("programme Admin relationship rules", () => {
 });
 
 describe("programme Admin role evaluation", () => {
-  const today = new Date(2025, 5, 15);
-  const base = { roleCode: "project_index_admin", activeFlag: true, effectiveFrom: new Date(2025, 0, 1) };
-  it("only grants an active current project_index_admin role", () => {
-    expect(isProgrammeAdminRoleEffective(base, today)).toBe(true);
+  const today = new Date(2026, 7, 23);
+  const base = { roleCode: "project_index_admin", activeFlag: true, effectiveFrom: "2026-01-01" };
+  it("uses inclusive, calendar-safe effective date boundaries", () => {
+    expect(isProgrammeAdminRoleEffective({ ...base, effectiveFrom: "2026-08-23" }, today)).toBe(true);
+    expect(isProgrammeAdminRoleEffective({ ...base, effectiveTo: "2026-08-23" }, today)).toBe(true);
+    expect(isProgrammeAdminRoleEffective({ ...base, effectiveFrom: "2026-08-24" }, today)).toBe(false);
+    expect(isProgrammeAdminRoleEffective({ ...base, effectiveTo: "2026-08-22" }, today)).toBe(false);
+  });
+  it("denies inactive and wrong role codes", () => {
     expect(isProgrammeAdminRoleEffective({ ...base, activeFlag: false }, today)).toBe(false);
-    expect(isProgrammeAdminRoleEffective({ ...base, effectiveFrom: new Date(2025, 6, 1) }, today)).toBe(false);
-    expect(isProgrammeAdminRoleEffective({ ...base, effectiveTo: new Date(2025, 5, 14) }, today)).toBe(false);
     expect(isProgrammeAdminRoleEffective({ ...base, roleCode: "project_register_admin" }, today)).toBe(false);
   });
 });
