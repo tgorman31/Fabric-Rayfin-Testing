@@ -4,6 +4,7 @@ import type { project_index_summary } from "../../rayfin/data/project_index_summ
 import type { project_reporting_programme_item } from "../../rayfin/data/project_reporting_programme_item";
 import type { project_team_member } from "../../rayfin/data/project_team_member";
 
+import { REPORTING_STAGE_OPTIONS } from "@/domain/targetProgrammeStages";
 import { getRayfinClient, isLocalBackend } from "./rayfinClient";
 
 const ACTIVE_EFFECTIVE_TO = "2099-12-31";
@@ -93,13 +94,7 @@ const USER_ROLE_FIELDS = [
 ] as const;
 
 const gatewayOptions = ["Gateway 1", "Gateway 2", "Gateway 3", "Gateway 4"];
-const reportingStageOptions = [
-  "Land Activation",
-  "Site Pipeline",
-  "Planning",
-  "Detailed Design / Tender / Contract",
-  "Construction",
-];
+
 const subStageOptions = ["Early", "Active", "Review", "Complete"];
 const projectStatusOptions = ["On Track", "At Risk", "On Hold", "Complete"];
 const reportingStatusOptions = ["Draft", "In Progress", "Ready", "Submitted"];
@@ -612,7 +607,7 @@ async function ensureReportingProgramme(projectGuid: string) {
 function toProjectIndexOptions(): ProjectIndexOptions {
   return {
     gateways: gatewayOptions,
-    reportingStages: reportingStageOptions,
+    reportingStages: [...REPORTING_STAGE_OPTIONS],
     subStages: subStageOptions,
     projectStatuses: projectStatusOptions,
     reportingStatuses: reportingStatusOptions,
