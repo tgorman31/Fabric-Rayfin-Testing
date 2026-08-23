@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { normalizeProgrammeAdminEmail } from "@/domain/programmeAdminAuth";
 import {
   isProgrammeAdminRoleEffective,
   validateDefinitionCandidate,
@@ -94,6 +95,13 @@ describe("programme Admin relationship rules", () => {
     expect(() => validateProgrammeConfiguration(config({ definitions: [activity, reporting, reference], reportingMappings: [mapping, { ...mapping, guid: "mapping-2" }] }))).toThrow("Duplicate active reporting mapping");
     expect(() => validateProgrammeConfiguration(config({ definitions: [activity, reporting, milestone], reportingMappings: [{ ...mapping, targetItemDefinitionGuid: "milestone", targetField: "target_start", reportingReferenceItemDefinitionGuid: undefined }] }))).toThrow("Milestones cannot provide target_start");
     expect(() => validateProgrammeConfiguration(config({ definitions: [activity, reporting], reportingMappings: [{ ...mapping, reportingReferenceItemDefinitionGuid: "activity" }] }))).toThrow("reference must be a target reporting_reference");
+  });
+});
+
+describe("programme Admin bootstrap normalization", () => {
+  it("trims and normalizes bootstrap email and rejects blank input", () => {
+    expect(normalizeProgrammeAdminEmail("  Owner@Example.COM ")).toBe("owner@example.com");
+    expect(() => normalizeProgrammeAdminEmail("   ")).toThrow("email is required");
   });
 });
 

@@ -4,6 +4,7 @@ import type { programme_item_definition } from "../../rayfin/data/programme_item
 import type { programme_reporting_mapping } from "../../rayfin/data/programme_reporting_mapping";
 import type { programme_summary_member } from "../../rayfin/data/programme_summary_member";
 
+import { normalizeProgrammeAdminEmail } from "@/domain/programmeAdminAuth";
 import {
   isProgrammeAdminRoleEffective,
   validateDefinitionCandidate,
@@ -30,6 +31,13 @@ const DEPENDENCY_FIELDS = [
   "lag_days", "successor_field", "is_active", "effective_from", "effective_to", "created_at",
   "created_by_user_id", "created_by_user_email", "updated_at", "updated_by_user_id", "updated_by_user_email",
 ] as const;
+/*
+ * Security TODO: current v1 Admin service authorization protects normal
+ * application writes, but programme configuration entities remain broadly
+ * authenticated at the Rayfin data permission layer. Before production
+ * hardening, replace that access with a trusted claim/role-backed Rayfin
+ * @role policy once the supported Fabric Apps identity claim path is confirmed.
+ */
 const MAPPING_FIELDS = [
   "id", "guid", "reporting_item_definition_guid", "reporting_field", "target_item_definition_guid",
   "target_field", "reporting_reference_item_definition_guid", "is_active", "effective_from", "effective_to",
@@ -80,6 +88,45 @@ export async function getProgrammeAdminAccess(): Promise<boolean> {
 
 export async function assertProgrammeAdminAccess(): Promise<void> {
   if (!(await getProgrammeAdminAccess())) throw new Error("Programme Admin access is required.");
+}
+
+function bootstrapAuditUser(email: string): { id: string; email: string } {
+  const session = getRayfinClient().auth.getSession();
+  if (session.isAuthenticated && session.user) {
+    return { id: session.user.id, email: session.user.email };
+  }
+  return { id: "programme-admin-bootstrap", email };
+}
+
+export async function ensureProgrammeAdminRole(email: string): Promise<RoleRecord> {
+  const normalizedEmail = normalizeProgrammeAdminEmail(email);
+  const matchingRoles = await getRayfinClient().data.app_user_role.select(ROLE_FIELDS)
+    .where({ user_email: { eq: normalizedEmail }, role_code: { eq: "project_index_admin" } })
+    .first(-1)
+    .execute();
+  const existing = matchingRoles.find((role: RoleRecord) => isProgrammeAdminRoleEffective({
+    roleCode: role.role_code,
+    activeFlag: role.active_flag,
+    effectiveFrom: role.effective_from,
+    effectiveTo: role.effective_to,
+  }));
+  if (existing) return existing;
+
+  const operator = bootstrapAuditUser(normalizedEmail);
+  const now = new Date();
+  const effectiveFrom = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const id = crypto.randomUUID();
+  return getRayfinClient().data.app_user_role.create({
+    id,
+    guid: id,
+    user_email: normalizedEmail,
+    role_code: "project_index_admin",
+    active_flag: true,
+    effective_from: effectiveFrom,
+    created_at: now,
+    created_by_user_id: operator.id,
+    created_by_user_email: operator.email,
+  });
 }
 
 async function listDefinitions(includeRetired: boolean): Promise<ProgrammeAdminDefinition[]> {
