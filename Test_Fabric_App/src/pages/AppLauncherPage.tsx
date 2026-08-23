@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 
 import { useAuth } from "@/hooks/AuthContext";
+import { useProgrammeAdminAccess } from "@/hooks/useProgrammeAdminAccess";
 
 const launcherCards = [
   {
@@ -23,6 +24,16 @@ const launcherCards = [
 
 export function AppLauncherPage() {
   const { signOut, user } = useAuth();
+  const { loading: adminAccessLoading, hasAccess: hasProgrammeAdminAccess } = useProgrammeAdminAccess();
+  const visibleCards = !adminAccessLoading && hasProgrammeAdminAccess
+    ? [...launcherCards, {
+        title: "Admin",
+        description: "Maintain programme definitions and programme configuration.",
+        href: "/admin",
+        accent: "from-[#8fb73e] to-[#025437]",
+        available: true,
+      }]
+    : launcherCards;
 
   return (
     <div className="min-h-screen bg-[#f4f6f5] text-gray-950">
@@ -75,7 +86,7 @@ export function AppLauncherPage() {
           </div>
 
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            {launcherCards.map((card) => (
+            {visibleCards.map((card) => (
               <Link
                 key={card.title}
                 to={card.href}
