@@ -3,6 +3,8 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthPage } from "@/components/AuthPage";
 import { useAuth } from "@/hooks/AuthContext";
 import { useProjectRegisterAccess } from "@/hooks/useProjectRegisterAccess";
+import { useProgrammeAdminAccess } from "@/hooks/useProgrammeAdminAccess";
+import { AdminPage } from "@/pages/AdminPage";
 import { AppLauncherPage } from "@/pages/AppLauncherPage";
 import { HomePage } from "@/pages/HomePage";
 import { ProjectIndexPage } from "@/pages/ProjectIndexPage";
@@ -27,6 +29,21 @@ function AuthGuard({
   if (requireAuth && !isAuthenticated) return <Navigate to="/auth" replace />;
   if (!requireAuth && isAuthenticated) return <Navigate to="/" replace />;
 
+  return <>{children}</>;
+}
+
+function ProgrammeAdminAccessGuard({ children }: { children: React.ReactNode }) {
+  const { loading, hasAccess } = useProgrammeAdminAccess();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-gray-500">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!hasAccess) return <Navigate to="/apps" replace />;
   return <>{children}</>;
 }
 
@@ -89,6 +106,16 @@ function App() {
           element={
             <AuthGuard requireAuth={true}>
               <ProjectIndexPage />
+            </AuthGuard>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <AuthGuard requireAuth={true}>
+              <ProgrammeAdminAccessGuard>
+                <AdminPage />
+              </ProgrammeAdminAccessGuard>
             </AuthGuard>
           }
         />

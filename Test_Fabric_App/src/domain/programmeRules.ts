@@ -48,7 +48,8 @@ export type ReportingMapping = {
   targetItemDefinitionGuid: string;
   targetField: string;
   reportingReferenceItemDefinitionGuid?: string;
-};
+  isActive?: boolean;
+}
 
 export type TargetSummaryDates = {
   targetStart?: Date;
@@ -370,54 +371,74 @@ function getTargetValue(record: ProgrammeDateRecord | undefined, field: TargetFi
   return field === "target_start" ? record?.targetStart : record?.targetEnd;
 }
 
+function validateReportingMapping(
+  definitions: ProgrammeRuleDefinition[],
+  mapping: ReportingMapping,
+): void {
+  if (mapping.reportingField !== "reporting_start" && mapping.reportingField !== "reporting_end") {
+    throw new Error(`Unsupported reporting mapping field: ${mapping.reportingField}`);
+  }
+  if (mapping.targetField !== "target_start" && mapping.targetField !== "target_end") {
+    throw new Error(`Unsupported target mapping field: ${mapping.targetField}`);
+  }
+  const byGuid = definitionMap(definitions);
+  const reportingDefinition = byGuid.get(mapping.reportingItemDefinitionGuid);
+  const targetDefinition = byGuid.get(mapping.targetItemDefinitionGuid);
+  if (!reportingDefinition || reportingDefinition.programmeArea !== "reporting") {
+    throw new Error(`Mapping reporting definition must belong to reporting: ${mapping.guid}`);
+  }
+  if (!targetDefinition || targetDefinition.programmeArea !== "target") {
+    throw new Error(`Mapping target definition must belong to target: ${mapping.guid}`);
+  }
+  if (!["activity", "milestone"].includes(targetDefinition.rowType)) {
+    throw new Error(`Mapping target must be an activity or milestone: ${mapping.guid}`);
+  }
+  if (mapping.targetField === "target_start" && targetDefinition.rowType === "milestone") {
+    throw new Error(`Milestones cannot provide target_start mappings: ${mapping.guid}`);
+  }
+  const referenceDefinition = mapping.reportingReferenceItemDefinitionGuid
+    ? byGuid.get(mapping.reportingReferenceItemDefinitionGuid)
+    : undefined;
+  if (
+    mapping.reportingReferenceItemDefinitionGuid &&
+    (!referenceDefinition || referenceDefinition.programmeArea !== "target" || referenceDefinition.rowType !== "reporting_reference")
+  ) {
+    throw new Error(`Mapping reference must be a target reporting_reference: ${mapping.guid}`);
+  }
+}
+
+export function validateReportingMappings(
+  definitions: ProgrammeRuleDefinition[],
+  mappings: ReportingMapping[],
+): void {
+  for (const mapping of mappings) validateReportingMapping(definitions, mapping);
+}
+
 export function resolveReportingMappings(
   definitions: ProgrammeRuleDefinition[],
   records: ProgrammeDateRecord[],
   mappings: ReportingMapping[],
   effectiveTargetRecords: ProgrammeDateRecord[] = records,
 ): ReportingMappingResolution[] {
+  validateReportingMappings(definitions, mappings);
   const byGuid = definitionMap(definitions);
   const recordsByDefinition = new Map(records.map((record) => [record.programmeItemDefinitionGuid, record]));
   const effectiveByDefinition = new Map(effectiveTargetRecords.map((record) => [record.programmeItemDefinitionGuid, record]));
 
   return mappings.map((mapping) => {
-    if (mapping.reportingField !== "reporting_start" && mapping.reportingField !== "reporting_end") {
-      throw new Error(`Unsupported reporting mapping field: ${mapping.reportingField}`);
-    }
-    if (mapping.targetField !== "target_start" && mapping.targetField !== "target_end") {
-      throw new Error(`Unsupported target mapping field: ${mapping.targetField}`);
-    }
-    const reportingDefinition = byGuid.get(mapping.reportingItemDefinitionGuid);
-    const targetDefinition = byGuid.get(mapping.targetItemDefinitionGuid);
-    if (!reportingDefinition || reportingDefinition.programmeArea !== "reporting") {
-      throw new Error(`Mapping reporting definition must belong to reporting: ${mapping.guid}`);
-    }
-    if (!targetDefinition || targetDefinition.programmeArea !== "target") {
-      throw new Error(`Mapping target definition must belong to target: ${mapping.guid}`);
-    }
-    if (!["activity", "milestone"].includes(targetDefinition.rowType)) {
-      throw new Error(`Mapping target must be an activity or milestone: ${mapping.guid}`);
-    }
-    if (mapping.targetField === "target_start" && targetDefinition.rowType === "milestone") {
-      throw new Error(`Milestones cannot provide target_start mappings: ${mapping.guid}`);
-    }
+    const reportingDefinition = byGuid.get(mapping.reportingItemDefinitionGuid) as ProgrammeRuleDefinition;
+    const targetDefinition = byGuid.get(mapping.targetItemDefinitionGuid) as ProgrammeRuleDefinition;
     const referenceDefinition = mapping.reportingReferenceItemDefinitionGuid
       ? byGuid.get(mapping.reportingReferenceItemDefinitionGuid)
       : undefined;
-    if (
-      mapping.reportingReferenceItemDefinitionGuid &&
-      (!referenceDefinition || referenceDefinition.programmeArea !== "target" || referenceDefinition.rowType !== "reporting_reference")
-    ) {
-      throw new Error(`Mapping reference must be a target reporting_reference: ${mapping.guid}`);
-    }
 
     return {
       reportingDefinition,
-      reportingField: mapping.reportingField,
-      reportingValue: getReportingValue(recordsByDefinition.get(reportingDefinition.guid), mapping.reportingField),
+      reportingField: mapping.reportingField as ReportingField,
+      reportingValue: getReportingValue(recordsByDefinition.get(reportingDefinition.guid), mapping.reportingField as ReportingField),
       targetDefinition,
-      targetField: mapping.targetField,
-      targetValue: getTargetValue(effectiveByDefinition.get(targetDefinition.guid), mapping.targetField),
+      targetField: mapping.targetField as TargetField,
+      targetValue: getTargetValue(effectiveByDefinition.get(targetDefinition.guid), mapping.targetField as TargetField),
       reportingReferenceDefinition: referenceDefinition,
     };
   });

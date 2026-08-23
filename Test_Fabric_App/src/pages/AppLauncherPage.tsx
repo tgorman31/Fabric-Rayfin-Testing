@@ -1,6 +1,10 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
+import { isProgrammeAdminBootstrapEligible } from "@/domain/programmeAdminAuth";
 import { useAuth } from "@/hooks/AuthContext";
+import { bootstrapCurrentUserProgrammeAdmin } from "@/services/programmeAdminService";
+import { useProgrammeAdminAccess } from "@/hooks/useProgrammeAdminAccess";
 
 const launcherCards = [
   {
@@ -23,6 +27,22 @@ const launcherCards = [
 
 export function AppLauncherPage() {
   const { signOut, user } = useAuth();
+  const { loading: adminAccessLoading, hasAccess: hasProgrammeAdminAccess, refresh: refreshAdminAccess } = useProgrammeAdminAccess();
+  const [bootstrapState, setBootstrapState] = useState<"idle" | "saving" | "error">("idle");
+  const bootstrapEligible = !adminAccessLoading && !hasProgrammeAdminAccess && isProgrammeAdminBootstrapEligible({
+    isDevelopment: import.meta.env.DEV,
+    configuredEmail: import.meta.env.VITE_PROGRAMME_ADMIN_BOOTSTRAP_EMAIL,
+    currentUserEmail: user?.email,
+  });
+  const visibleCards = !adminAccessLoading && hasProgrammeAdminAccess
+    ? [...launcherCards, {
+        title: "Admin",
+        description: "Maintain programme definitions and programme configuration.",
+        href: "/admin",
+        accent: "from-[#8fb73e] to-[#025437]",
+        available: true,
+      }]
+    : launcherCards;
 
   return (
     <div className="min-h-screen bg-[#f4f6f5] text-gray-950">
@@ -75,7 +95,7 @@ export function AppLauncherPage() {
           </div>
 
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            {launcherCards.map((card) => (
+            {visibleCards.map((card) => (
               <Link
                 key={card.title}
                 to={card.href}
@@ -101,6 +121,25 @@ export function AppLauncherPage() {
               </Link>
             ))}
           </div>
+          {bootstrapEligible ? (
+            <div className="mt-6 rounded-3xl border border-dashed border-[#8fb73e] bg-[#f7fbf8] p-4">
+              <button
+                type="button"
+                disabled={bootstrapState === "saving"}
+                onClick={() => {
+                  setBootstrapState("saving");
+                  void bootstrapCurrentUserProgrammeAdmin()
+                    .then(() => refreshAdminAccess())
+                    .then(() => setBootstrapState("idle"))
+                    .catch(() => setBootstrapState("error"));
+                }}
+                className="rounded-full bg-[#025437] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {bootstrapState === "saving" ? "Bootstrapping..." : "Bootstrap Admin access"}
+              </button>
+              {bootstrapState === "error" ? <p className="mt-2 text-sm text-red-700">Unable to bootstrap Admin access.</p> : null}
+            </div>
+          ) : null}
         </div>
       </main>
     </div>

@@ -19,6 +19,19 @@ npm run dev
 
 Open [http://localhost:5173](http://localhost:5173) to view the app locally.
 
+### Local Programme Admin bootstrap
+
+For first local-development Programme Admin bootstrap, create or update
+`.env.local` with:
+
+```text
+VITE_PROGRAMME_ADMIN_BOOTSTRAP_EMAIL=<signed-in-user-email>
+```
+
+Run the app locally while signed in as that user and use the one-time
+**Bootstrap Admin access** action in the launcher. `.env.local` is ignored by
+Git and no real email address should be committed.
+
 ## Deploy
 
 ```bash
