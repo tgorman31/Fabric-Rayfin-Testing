@@ -14,6 +14,7 @@ import { useAuth } from "@/hooks/AuthContext";
 import { ProgrammeTimelineHeader } from "@/components/programme/ProgrammeTimelineHeader";
 import { ProgrammeTimelineRow } from "@/components/programme/ProgrammeTimelineRow";
 import { ProgrammeZoomControls } from "@/components/programme/ProgrammeZoomControls";
+import { TargetProgrammePanel } from "@/components/programme/TargetProgrammePanel";
 import { useProgrammeTimeline } from "@/hooks/useProgrammeTimeline";
 import { buildTimelineRange, clamp, getDurationLabel, getTimelineHeaderRows, getTimelinePlacement, TIMELINE_HEADER_ROW_HEIGHT } from "@/utils/programmeTimeline";
 import {
@@ -77,7 +78,7 @@ type MapProjectPoint = ProjectListItem & {
 const majorTabs: Array<{ key: MajorTab; label: string; enabled: boolean }> = [
   { key: "project-information", label: "Project Information", enabled: true },
   { key: "reporting-programme", label: "Reporting Programme", enabled: true },
-  { key: "target-programme", label: "Target Programme", enabled: false },
+  { key: "target-programme", label: "Target Programme", enabled: true },
   { key: "tenure", label: "Tenure", enabled: false },
   { key: "board-report", label: "Board Report", enabled: false },
 ];
@@ -2079,7 +2080,9 @@ export function ProjectIndexPage() {
                 </div>
               </section>
             ) : activeTab === "target-programme" ? (
-              <PlaceholderPanel title="Target Programme" />
+              <TargetProgrammePanel
+                reportingStage={workspace.summary.reportingStage}
+              />
             ) : activeTab === "tenure" ? (
               <PlaceholderPanel title="Tenure" />
             ) : (
