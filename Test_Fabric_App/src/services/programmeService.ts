@@ -1,4 +1,5 @@
 import type { master_project_register } from "../../rayfin/data/master_project_register";
+import type { project_reporting_programme_item } from "../../rayfin/data/project_reporting_programme_item";
 import type { programme_dependency_definition } from "../../rayfin/data/programme_dependency_definition";
 import type { programme_item_definition } from "../../rayfin/data/programme_item_definition";
 import type { programme_reporting_mapping } from "../../rayfin/data/programme_reporting_mapping";
@@ -13,6 +14,11 @@ import {
   type ReportingMapping,
   type SummaryMembership,
 } from "@/domain/programmeRules";
+import {
+  buildReportingMigrationPlan,
+  REPORTING_COMPATIBILITY_DEFINITIONS,
+  type LegacyReportingRecord,
+} from "@/domain/reportingProgramme";
 import { getRayfinClient } from "./rayfinClient";
 
 export type ProgrammeArea = "reporting" | "target";
@@ -336,6 +342,13 @@ const REPORTING_MAPPING_FIELDS = [
   "effective_to",
 ] as const;
 
+const LEGACY_REPORTING_FIELDS = [
+  "row_code",
+  "row_label",
+  "start_date",
+  "end_date",
+] as const;
+
 const PROJECT_PROGRAMME_FIELDS = [
   "id",
   "guid",
@@ -446,6 +459,66 @@ export async function seedRepresentativeProgrammeDefinitions(): Promise<
   }
 
   return seeded;
+}
+
+export async function ensureReportingCompatibilityDefinitions(): Promise<ProgrammeDefinitionRecord[]> {
+  const client = getRayfinClient().data.programme_item_definition;
+  const user = getCurrentUser();
+  const now = new Date();
+  const persisted: ProgrammeDefinitionRecord[] = [];
+
+  for (const definition of REPORTING_COMPATIBILITY_DEFINITIONS) {
+    const byCode = await client.select(PROGRAMME_DEFINITION_FIELDS)
+      .where({ item_code: { eq: definition.itemCode } }).findFirst();
+    const byGuid = await client.select(PROGRAMME_DEFINITION_FIELDS)
+      .where({ guid: { eq: definition.guid } }).findFirst();
+    if (byCode && byCode.guid !== definition.guid) {
+      throw new Error(`Reporting compatibility code has conflicting GUID: ${definition.itemCode}`);
+    }
+    if (byGuid && byGuid.item_code !== definition.itemCode) {
+      throw new Error(`Reporting compatibility GUID has conflicting code: ${definition.guid}`);
+    }
+    const existing = byCode ?? byGuid;
+    if (existing) {
+      if (
+        existing.programme_area !== "reporting" ||
+        existing.stage_code !== definition.stageCode ||
+        existing.row_label !== definition.rowLabel ||
+        existing.row_type !== "activity" ||
+        existing.sort_order !== definition.sortOrder ||
+        (existing.level_code ?? "") !== definition.levelCode ||
+        existing.is_editable !== definition.isEditable ||
+        existing.is_derived
+      ) {
+        throw new Error(`Reporting compatibility definition has conflicting semantics: ${definition.itemCode}`);
+      }
+      persisted.push(existing);
+      continue;
+    }
+    const id = definition.guid;
+    persisted.push(await client.create({
+      id,
+      guid: definition.guid,
+      item_code: definition.itemCode,
+      programme_area: "reporting",
+      stage_code: definition.stageCode,
+      row_label: definition.rowLabel,
+      row_type: "activity",
+      sort_order: definition.sortOrder,
+      level_code: definition.levelCode,
+      is_active: true,
+      is_editable: definition.isEditable,
+      is_derived: false,
+      effective_from: now,
+      created_at: now,
+      created_by_user_id: user.id,
+      created_by_user_email: user.email,
+      updated_at: now,
+      updated_by_user_id: user.id,
+      updated_by_user_email: user.email,
+    }));
+  }
+  return persisted;
 }
 
 export async function listActiveProgrammeDefinitions(options: {
@@ -652,6 +725,60 @@ export async function seedRepresentativeProgrammeRelationships(): Promise<{
   };
 }
 
+export async function migrateReportingProgramme(
+  projectGuid: string,
+  compatibilityDefinitions: readonly ProgrammeDefinitionRecord[],
+): Promise<void> {
+  const legacyRows = await getRayfinClient().data.project_reporting_programme_item
+    .select(LEGACY_REPORTING_FIELDS)
+    .where({ project_guid: { eq: projectGuid } })
+    .first(-1)
+    .execute() as project_reporting_programme_item[];
+  const canonicalRecords = await listProjectProgrammeRecords(projectGuid);
+  const plan = buildReportingMigrationPlan(
+    REPORTING_COMPATIBILITY_DEFINITIONS,
+    legacyRows as LegacyReportingRecord[],
+    canonicalRecords,
+  );
+  const activeDefinitionGuids = new Set(
+    compatibilityDefinitions.filter((definition) => definition.is_active).map((definition) => definition.guid),
+  );
+  const user = getCurrentUser();
+  const now = new Date();
+  for (const decision of plan) {
+    if (!decision.create || !activeDefinitionGuids.has(decision.definitionGuid)) continue;
+    const id = crypto.randomUUID();
+    await getRayfinClient().data.project_programme.create({
+      id,
+      guid: id,
+      project_guid: projectGuid,
+      programme_item_definition_guid: decision.definitionGuid,
+      reporting_start: decision.reportingStart,
+      reporting_end: decision.reportingEnd,
+      created_at: now,
+      created_by_user_id: user.id,
+      created_by_user_email: user.email,
+      updated_at: now,
+      updated_by_user_id: user.id,
+      updated_by_user_email: user.email,
+    });
+  }
+}
+
+export async function ensureCanonicalReportingProgramme(
+  projectGuid: string,
+): Promise<{ definitions: ProgrammeDefinitionRecord[]; records: ProjectProgrammeRecord[] }> {
+  const compatibility = await ensureReportingCompatibilityDefinitions();
+  await migrateReportingProgramme(projectGuid, compatibility);
+  const definitions = await listActiveProgrammeDefinitions({ programmeArea: "reporting" });
+  const existing = await listProjectProgrammeRecords(projectGuid);
+  const missing = definitions.filter((definition) => !findDuplicateProjectProgrammeRecord(existing, projectGuid, definition.guid));
+  if (missing.length > 0) {
+    await Promise.all(missing.map((definition) => ensureProjectProgrammeRecord(projectGuid, definition.guid)));
+  }
+  return { definitions, records: await listProjectProgrammeRecords(projectGuid) };
+}
+
 export async function listProjectProgrammeRecords(
   projectGuid: string,
 ): Promise<ProjectProgrammeRecord[]> {
@@ -737,4 +864,35 @@ export async function updateProjectProgrammeDates(
   }
 
   await getRayfinClient().data.project_programme.update({ id: recordId }, update);
+}
+
+export async function resolveProjectReportingMappings(projectGuid: string) {
+  const definitions = await listActiveProgrammeDefinitions();
+  const records = await listProjectProgrammeRecords(projectGuid);
+  const mappings = await listActiveReportingMappings();
+  const ruleDefinitions = definitions.map((definition) => ({
+    guid: definition.guid,
+    programmeArea: definition.programme_area as ProgrammeArea,
+    rowType: definition.row_type as ProgrammeRowType,
+  }));
+  const ruleRecords = records.map((record) => ({
+    programmeItemDefinitionGuid: record.programme_item_definition_guid,
+    targetStart: record.target_start,
+    targetEnd: record.target_end,
+    reportingStart: record.reporting_start,
+    reportingEnd: record.reporting_end,
+  }));
+  return resolveReportingMappings(
+    ruleDefinitions,
+    ruleRecords,
+    mappings.map((mapping) => ({
+      guid: mapping.guid,
+      reportingItemDefinitionGuid: mapping.reporting_item_definition_guid,
+      reportingField: mapping.reporting_field,
+      targetItemDefinitionGuid: mapping.target_item_definition_guid,
+      targetField: mapping.target_field,
+      reportingReferenceItemDefinitionGuid: mapping.reporting_reference_item_definition_guid,
+      isActive: mapping.is_active,
+    })),
+  );
 }

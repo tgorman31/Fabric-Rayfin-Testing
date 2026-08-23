@@ -1,10 +1,17 @@
 import type { master_project_register } from "../../rayfin/data/master_project_register";
 import type { master_site_register } from "../../rayfin/data/master_site_register";
 import type { project_index_summary } from "../../rayfin/data/project_index_summary";
-import type { project_reporting_programme_item } from "../../rayfin/data/project_reporting_programme_item";
+
 import type { project_team_member } from "../../rayfin/data/project_team_member";
 
 import { REPORTING_STAGE_OPTIONS } from "@/domain/targetProgrammeStages";
+import { buildReportingDatePatch, mapCanonicalReportingView } from "@/domain/reportingProgramme";
+import {
+  ensureCanonicalReportingProgramme,
+  updateProjectProgrammeDates,
+  type ProgrammeDefinitionRecord,
+  type ProjectProgrammeRecord,
+} from "./programmeService";
 import { getRayfinClient, isLocalBackend } from "./rayfinClient";
 
 const ACTIVE_EFFECTIVE_TO = "2099-12-31";
@@ -63,28 +70,7 @@ const TEAM_FIELDS = [
   "updated_by_user_id",
   "updated_by_user_email",
 ] as const;
-const REPORTING_FIELDS = [
-  "id",
-  "guid",
-  "project_guid",
-  "section_code",
-  "row_code",
-  "row_label",
-  "level_code",
-  "sort_order",
-  "is_editable",
-  "start_date",
-  "end_date",
-  "reporting_date",
-  "reference_rag_code",
-  "reference_rag_comment",
-  "created_at",
-  "created_by_user_id",
-  "created_by_user_email",
-  "updated_at",
-  "updated_by_user_id",
-  "updated_by_user_email",
-] as const;
+
 const USER_ROLE_FIELDS = [
   "user_email",
   "role_code",
@@ -129,128 +115,7 @@ const teamOptions = [
   "Programme",
 ];
 
-const reportingProgrammeSeed = [
-  {
-    sectionCode: "land-activation",
-    sectionLabel: "Land Activation",
-    items: [
-      {
-        rowCode: "la-opportunity",
-        rowLabel: "Opportunity identified",
-        levelCode: "O",
-        isEditable: true,
-      },
-      {
-        rowCode: "la-agreement",
-        rowLabel: "Heads of terms agreed",
-        levelCode: "E",
-        isEditable: true,
-      },
-      {
-        rowCode: "la-transfer",
-        rowLabel: "Transfer to property",
-        levelCode: "B",
-        isEditable: true,
-      },
-    ],
-  },
-  {
-    sectionCode: "site-pipeline",
-    sectionLabel: "Site Pipeline",
-    items: [
-      {
-        rowCode: "sp-g1",
-        rowLabel: "Gateway 1",
-        levelCode: "B",
-        isEditable: true,
-      },
-      {
-        rowCode: "sp-g2",
-        rowLabel: "Gateway 2",
-        levelCode: "E",
-        isEditable: true,
-      },
-      {
-        rowCode: "sp-homes",
-        rowLabel: "Homes total",
-        levelCode: "O",
-        isEditable: false,
-      },
-    ],
-  },
-  {
-    sectionCode: "planning",
-    sectionLabel: "Planning",
-    items: [
-      {
-        rowCode: "pl-preapp",
-        rowLabel: "Pre-app engagement",
-        levelCode: "P",
-        isEditable: true,
-      },
-      {
-        rowCode: "pl-submit",
-        rowLabel: "Planning submitted",
-        levelCode: "E",
-        isEditable: true,
-      },
-      {
-        rowCode: "pl-granted",
-        rowLabel: "Planning granted",
-        levelCode: "B",
-        isEditable: true,
-      },
-    ],
-  },
-  {
-    sectionCode: "ddtc",
-    sectionLabel: "Detailed Design / Tender / Contract",
-    items: [
-      {
-        rowCode: "ddtc-design",
-        rowLabel: "Detailed design complete",
-        levelCode: "O",
-        isEditable: true,
-      },
-      {
-        rowCode: "ddtc-tender",
-        rowLabel: "Tender return",
-        levelCode: "E",
-        isEditable: true,
-      },
-      {
-        rowCode: "ddtc-contract",
-        rowLabel: "Contract award",
-        levelCode: "B",
-        isEditable: true,
-      },
-    ],
-  },
-  {
-    sectionCode: "construction",
-    sectionLabel: "Construction",
-    items: [
-      {
-        rowCode: "co-start",
-        rowLabel: "Start on site",
-        levelCode: "B",
-        isEditable: true,
-      },
-      {
-        rowCode: "co-mid",
-        rowLabel: "Mid-stage delivery review",
-        levelCode: "O",
-        isEditable: true,
-      },
-      {
-        rowCode: "co-complete",
-        rowLabel: "Completion / handover",
-        levelCode: "B",
-        isEditable: true,
-      },
-    ],
-  },
-] as const;
+
 
 type AuthenticatedUser = {
   id: string;
@@ -261,7 +126,7 @@ type ProjectRecord = master_project_register;
 type SiteRecord = master_site_register;
 type SummaryRecord = project_index_summary;
 type TeamRecord = project_team_member;
-type ReportingRecord = project_reporting_programme_item;
+
 
 export type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -462,33 +327,6 @@ function mapTeamRecord(record: TeamRecord): ProjectTeamMemberDraft {
   };
 }
 
-function mapReportingRecord(
-  record: ReportingRecord,
-  sectionLabel: string,
-): ReportingProgrammeItem {
-  return {
-    id: record.id,
-    sectionCode: record.section_code,
-    sectionLabel,
-    rowCode: record.row_code,
-    rowLabel: record.row_label,
-    levelCode: record.level_code,
-    isEditable: record.is_editable,
-    startDate: dateKey(record.start_date),
-    endDate: dateKey(record.end_date),
-    reportingDate: dateKey(record.reporting_date),
-    referenceRagCode: record.reference_rag_code ?? "",
-    referenceRagComment: record.reference_rag_comment ?? "",
-  };
-}
-
-function getSectionLabel(sectionCode: string): string {
-  return (
-    reportingProgrammeSeed.find(
-      (section) => section.sectionCode === sectionCode,
-    )?.sectionLabel ?? sectionCode
-  );
-}
 
 async function findProjectByGuid(projectGuid: string) {
   return getRayfinClient()
@@ -560,49 +398,6 @@ async function ensureSummary(project: ProjectRecord): Promise<SummaryRecord> {
   });
 }
 
-async function ensureReportingProgramme(projectGuid: string) {
-  const existing = await getRayfinClient()
-    .data.project_reporting_programme_item.select(REPORTING_FIELDS)
-    .where({ project_guid: { eq: projectGuid } })
-    .first(-1)
-    .execute();
-
-  if (existing.length > 0) return existing;
-
-  const user = getCurrentUser();
-  const now = new Date();
-  const created: ReportingRecord[] = [];
-  let sortOrder = 1;
-
-  for (const section of reportingProgrammeSeed) {
-    for (const item of section.items) {
-      const id = crypto.randomUUID();
-      const record =
-        await getRayfinClient().data.project_reporting_programme_item.create({
-          id,
-          guid: id,
-          project_guid: projectGuid,
-          section_code: section.sectionCode,
-          row_code: item.rowCode,
-          row_label: item.rowLabel,
-          level_code: item.levelCode,
-          sort_order: sortOrder,
-          is_editable: item.isEditable,
-          created_at: now,
-          created_by_user_id: user.id,
-          created_by_user_email: user.email,
-          updated_at: now,
-          updated_by_user_id: user.id,
-          updated_by_user_email: user.email,
-        });
-
-      created.push(record);
-      sortOrder += 1;
-    }
-  }
-
-  return created;
-}
 
 function toProjectIndexOptions(): ProjectIndexOptions {
   return {
@@ -750,7 +545,7 @@ export async function getProjectIndexWorkspace(
     throw new Error("Project not found.");
   }
 
-  const [siteMap, summary, teamRows, reportingRows] = await Promise.all([
+  const [siteMap, summary, teamRows, reporting] = await Promise.all([
     findSiteMap([project.site_guid]),
     ensureSummary(project),
     getRayfinClient()
@@ -758,8 +553,14 @@ export async function getProjectIndexWorkspace(
       .where({ project_guid: { eq: project.guid } })
       .first(-1)
       .execute(),
-    ensureReportingProgramme(project.guid),
+    ensureCanonicalReportingProgramme(project.guid),
   ]);
+  const recordsByDefinition = new Map(reporting.records.map((record) => [record.programme_item_definition_guid, record]));
+  const reportingRows = reporting.definitions
+    .map((definition) => ({ definition, record: recordsByDefinition.get(definition.guid) }))
+    .filter((entry): entry is { definition: ProgrammeDefinitionRecord; record: ProjectProgrammeRecord } => Boolean(entry.record))
+    .sort((left, right) => left.definition.sort_order - right.definition.sort_order)
+    .map(({ definition, record }) => mapCanonicalReportingView(definition, record));
 
   return {
     summary: mapSummary(project, siteMap.get(project.site_guid), summary),
@@ -768,9 +569,7 @@ export async function getProjectIndexWorkspace(
         (left.person_name ?? "").localeCompare(right.person_name ?? ""),
       )
       .map(mapTeamRecord),
-    reportingProgramme: [...reportingRows]
-      .sort((left, right) => left.sort_order - right.sort_order)
-      .map((row) => mapReportingRecord(row, getSectionLabel(row.section_code))),
+    reportingProgramme: reportingRows,
   };
 }
 
@@ -932,26 +731,9 @@ export async function deleteProjectTeamMember(memberId: string): Promise<void> {
 
 export async function updateReportingProgrammeItem(
   itemId: string,
-  patch: Partial<
-    Pick<ReportingProgrammeItem, "startDate" | "endDate" | "reportingDate">
-  >,
+  patch: Partial<Pick<ReportingProgrammeItem, "startDate" | "endDate">>,
 ): Promise<void> {
-  const user = getCurrentUser();
-  const now = new Date();
-
-  await getRayfinClient().data.project_reporting_programme_item.update(
-    { id: itemId },
-    {
-      start_date: patch.startDate ? new Date(patch.startDate) : undefined,
-      end_date: patch.endDate ? new Date(patch.endDate) : undefined,
-      reporting_date: patch.reportingDate
-        ? new Date(patch.reportingDate)
-        : undefined,
-      updated_at: now,
-      updated_by_user_id: user.id,
-      updated_by_user_email: user.email,
-    },
-  );
+  await updateProjectProgrammeDates(itemId, buildReportingDatePatch(patch));
 }
 
 export function getProjectIndexOptions(): ProjectIndexOptions {
