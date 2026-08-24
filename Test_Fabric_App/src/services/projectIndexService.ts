@@ -4,6 +4,7 @@ import type { project_index_summary } from "../../rayfin/data/project_index_summ
 
 import type { project_team_member } from "../../rayfin/data/project_team_member";
 
+import { hasProjectRegisterAccess } from "@/domain/projectRegisterAccess";
 import { REPORTING_STAGE_OPTIONS } from "@/domain/targetProgrammeStages";
 import {
   buildReportingDatePatch,
@@ -429,21 +430,7 @@ export async function getProjectRegisterAccess(): Promise<boolean> {
     .first(-1)
     .execute();
 
-  if (roles.length === 0) {
-    return true;
-  }
-
-  const today = new Date();
-
-  return roles.some((role) => {
-    if (!role.active_flag) return false;
-    if (!role.role_code.startsWith("project_register")) return false;
-
-    const from = new Date(role.effective_from);
-    const to = role.effective_to ? new Date(role.effective_to) : null;
-
-    return from <= today && (!to || to >= today);
-  });
+  return hasProjectRegisterAccess(roles, new Date());
 }
 
 export async function listProjectIndexProjects(input: {
