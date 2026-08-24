@@ -24,6 +24,41 @@ export type CanonicalReportingRecord = {
   reporting_end?: Date;
 };
 
+export type CompatibilityDefinitionState = {
+  guid: string;
+  item_code: string;
+  programme_area: string;
+  stage_code: string;
+  row_type: string;
+  is_derived: boolean;
+  is_active: boolean;
+};
+
+export function isCompatibleReportingDefinition(
+  existing: CompatibilityDefinitionState,
+  expected: ReportingCompatibilityDefinition,
+): boolean {
+  return existing.guid === expected.guid &&
+    existing.item_code === expected.itemCode &&
+    existing.programme_area === "reporting" &&
+    existing.stage_code === expected.stageCode &&
+    existing.row_type === "activity" &&
+    !existing.is_derived;
+}
+
+export function requiresReportingMigration(
+  compatibilityDefinitions: readonly Pick<ReportingCompatibilityDefinition, "guid">[],
+  persistedDefinitions: readonly Pick<CompatibilityDefinitionState, "guid" | "is_active">[],
+  canonicalRecords: readonly Pick<CanonicalReportingRecord, "programme_item_definition_guid">[],
+): boolean {
+  const canonicalGuids = new Set(canonicalRecords.map((record) => record.programme_item_definition_guid));
+  const persistedByGuid = new Map(persistedDefinitions.map((definition) => [definition.guid, definition]));
+  return compatibilityDefinitions.some((definition) => {
+    const persisted = persistedByGuid.get(definition.guid);
+    return Boolean(persisted?.is_active && !canonicalGuids.has(definition.guid));
+  });
+}
+
 export type ReportingMigrationDecision = {
   definitionGuid: string;
   itemCode: string;
@@ -145,15 +180,30 @@ export function buildReportingMigrationPlan(
 
 export function buildReportingDatePatch(
   patch: { startDate?: string; endDate?: string },
-): { reporting_start?: Date; reporting_end?: Date } {
-  const result: { reporting_start?: Date; reporting_end?: Date } = {};
+): { reporting_start?: Date | null; reporting_end?: Date | null } {
+  const result: { reporting_start?: Date | null; reporting_end?: Date | null } = {};
   if (Object.prototype.hasOwnProperty.call(patch, "startDate")) {
-    result.reporting_start = parseDateOnly(patch.startDate);
+    result.reporting_start = patch.startDate ? parseDateOnly(patch.startDate) ?? null : null;
   }
   if (Object.prototype.hasOwnProperty.call(patch, "endDate")) {
-    result.reporting_end = parseDateOnly(patch.endDate);
+    result.reporting_end = patch.endDate ? parseDateOnly(patch.endDate) ?? null : null;
   }
   return result;
+}
+
+export function sortReportingDefinitions<T extends { stage_code: string; sort_order: number; item_code: string }>(
+  definitions: readonly T[],
+): T[] {
+  const stagePosition = new Map<string, number>(REPORTING_COMPATIBILITY_STAGE_ORDER.map((stage, index) => [stage, index]));
+  return [...definitions].sort((left, right) => {
+    const leftPosition = stagePosition.get(left.stage_code) ?? REPORTING_COMPATIBILITY_STAGE_ORDER.length;
+    const rightPosition = stagePosition.get(right.stage_code) ?? REPORTING_COMPATIBILITY_STAGE_ORDER.length;
+    if (leftPosition !== rightPosition) return leftPosition - rightPosition;
+    if (leftPosition === REPORTING_COMPATIBILITY_STAGE_ORDER.length) {
+      return left.stage_code.localeCompare(right.stage_code) || left.sort_order - right.sort_order || left.item_code.localeCompare(right.item_code);
+    }
+    return left.sort_order - right.sort_order || left.item_code.localeCompare(right.item_code);
+  });
 }
 
 export function mapCanonicalReportingView(

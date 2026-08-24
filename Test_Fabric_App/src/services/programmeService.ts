@@ -16,7 +16,9 @@ import {
 } from "@/domain/programmeRules";
 import {
   buildReportingMigrationPlan,
+  isCompatibleReportingDefinition,
   REPORTING_COMPATIBILITY_DEFINITIONS,
+  requiresReportingMigration,
   type LegacyReportingRecord,
 } from "@/domain/reportingProgramme";
 import { getRayfinClient } from "./rayfinClient";
@@ -82,7 +84,7 @@ export type ProgrammeDateSet = Pick<
 >;
 
 export type ProgrammeDatePatch = Partial<
-  Record<keyof ProgrammeDateSet, Date | undefined>
+  Record<keyof ProgrammeDateSet, Date | null | undefined>
 >;
 
 export type ProgrammeDefinitionSeed = {
@@ -395,7 +397,7 @@ export function applyProgrammeDatePatch(
   current: ProgrammeDateSet,
   patch: ProgrammeDatePatch,
 ): ProgrammeDateSet {
-  return { ...current, ...patch };
+  return { ...current, ...patch } as ProgrammeDateSet;
 }
 
 export async function seedRepresentativeProgrammeDefinitions(): Promise<
@@ -480,16 +482,7 @@ export async function ensureReportingCompatibilityDefinitions(): Promise<Program
     }
     const existing = byCode ?? byGuid;
     if (existing) {
-      if (
-        existing.programme_area !== "reporting" ||
-        existing.stage_code !== definition.stageCode ||
-        existing.row_label !== definition.rowLabel ||
-        existing.row_type !== "activity" ||
-        existing.sort_order !== definition.sortOrder ||
-        (existing.level_code ?? "") !== definition.levelCode ||
-        existing.is_editable !== definition.isEditable ||
-        existing.is_derived
-      ) {
+      if (!isCompatibleReportingDefinition(existing, definition)) {
         throw new Error(`Reporting compatibility definition has conflicting semantics: ${definition.itemCode}`);
       }
       persisted.push(existing);
@@ -729,12 +722,15 @@ export async function migrateReportingProgramme(
   projectGuid: string,
   compatibilityDefinitions: readonly ProgrammeDefinitionRecord[],
 ): Promise<void> {
+  const canonicalRecords = await listProjectProgrammeRecords(projectGuid);
+  if (!requiresReportingMigration(REPORTING_COMPATIBILITY_DEFINITIONS, compatibilityDefinitions, canonicalRecords)) {
+    return;
+  }
   const legacyRows = await getRayfinClient().data.project_reporting_programme_item
     .select(LEGACY_REPORTING_FIELDS)
     .where({ project_guid: { eq: projectGuid } })
     .first(-1)
     .execute() as project_reporting_programme_item[];
-  const canonicalRecords = await listProjectProgrammeRecords(projectGuid);
   const plan = buildReportingMigrationPlan(
     REPORTING_COMPATIBILITY_DEFINITIONS,
     legacyRows as LegacyReportingRecord[],
@@ -860,15 +856,21 @@ export async function updateProjectProgrammeDates(
   };
 
   for (const field of Object.keys(patch) as Array<keyof ProgrammeDateSet>) {
-    update[field] = patch[field];
+    // Rayfin 1.34.0 serializes null as GraphQL null, while its generated entity
+    // type models optional dates as Date | undefined. Keep the verified clear
+    // representation at this SDK boundary rather than allowing undefined to be omitted.
+    update[field] = patch[field] === null
+      ? (null as unknown as Date)
+      : patch[field];
   }
 
   await getRayfinClient().data.project_programme.update({ id: recordId }, update);
 }
 
 export async function resolveProjectReportingMappings(projectGuid: string) {
+  const canonical = await ensureCanonicalReportingProgramme(projectGuid);
   const definitions = await listActiveProgrammeDefinitions();
-  const records = await listProjectProgrammeRecords(projectGuid);
+  const records = canonical.records;
   const mappings = await listActiveReportingMappings();
   const ruleDefinitions = definitions.map((definition) => ({
     guid: definition.guid,

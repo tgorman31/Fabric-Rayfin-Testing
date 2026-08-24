@@ -3,9 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   buildReportingMigrationPlan,
   buildReportingDatePatch,
+  isCompatibleReportingDefinition,
+  requiresReportingMigration,
   mapCanonicalReportingView,
   REPORTING_COMPATIBILITY_DEFINITIONS,
   REPORTING_COMPATIBILITY_STAGE_ORDER,
+  sortReportingDefinitions,
 } from "@/domain/reportingProgramme";
 import type { ProgrammeDefinitionRecord, ProjectProgrammeRecord } from "@/services/programmeService";
 
@@ -50,6 +53,19 @@ const programmeRecord = (overrides: Partial<ProjectProgrammeRecord> = {}): Proje
 });
 
 describe("Reporting compatibility catalogue", () => {
+  it("accepts Admin-maintained mutable metadata without changing identity", () => {
+    const expected = REPORTING_COMPATIBILITY_DEFINITIONS[0];
+    expect(isCompatibleReportingDefinition({
+      guid: expected.guid,
+      item_code: expected.itemCode,
+      programme_area: "reporting",
+      stage_code: expected.stageCode,
+      row_type: "activity",
+      is_derived: false,
+      is_active: false,
+    }, expected)).toBe(true);
+  });
+
   it("preserves exact row codes and five-stage order", () => {
     expect(REPORTING_COMPATIBILITY_DEFINITIONS).toHaveLength(15);
     expect(new Set(REPORTING_COMPATIBILITY_DEFINITIONS.map((item) => item.itemCode)).size).toBe(15);
@@ -89,6 +105,21 @@ describe("Reporting legacy migration", () => {
     expect(() => buildReportingMigrationPlan(catalogue, [{ row_code: "wrong-label-row" }], [])).toThrow("not in the compatibility catalogue");
   });
 
+  it("checks migration only for missing active compatibility records", () => {
+    const definitions = [
+      { ...REPORTING_COMPATIBILITY_DEFINITIONS[0] },
+      { ...REPORTING_COMPATIBILITY_DEFINITIONS[1] },
+    ];
+    expect(requiresReportingMigration(definitions, [
+      { guid: definitions[0].guid, is_active: true },
+      { guid: definitions[1].guid, is_active: false },
+    ], [{ programme_item_definition_guid: definitions[0].guid }])).toBe(false);
+    expect(requiresReportingMigration(definitions, [
+      { guid: definitions[0].guid, is_active: true },
+      { guid: definitions[1].guid, is_active: true },
+    ], [{ programme_item_definition_guid: definitions[0].guid }])).toBe(true);
+  });
+
   it("leaves existing canonical records authoritative and makes retry a no-op", () => {
     const existing = { programme_item_definition_guid: catalogue[0].guid, reporting_start: undefined, reporting_end: undefined };
     const first = buildReportingMigrationPlan(catalogue, [
@@ -118,7 +149,18 @@ describe("canonical Reporting view", () => {
   it("supports independent canonical date fields and explicit clearing", () => {
     const start = buildReportingDatePatch({ startDate: "2026-04-01" });
     expect(start).toEqual({ reporting_start: date(2026, 4, 1) });
-    expect(buildReportingDatePatch({ endDate: "" })).toEqual({ reporting_end: undefined });
+    expect(buildReportingDatePatch({ endDate: "" })).toEqual({ reporting_end: null });
     expect(buildReportingDatePatch({ startDate: "" })).not.toHaveProperty("reporting_end");
+  });
+
+  it("keeps fixed section order despite conflicting row sort orders", () => {
+    const definitions = [
+      { stage_code: "planning", sort_order: 1, item_code: "planning-first" },
+      { stage_code: "land-activation", sort_order: 99, item_code: "land-last" },
+      { stage_code: "future-stage", sort_order: 1, item_code: "future" },
+    ];
+    expect(sortReportingDefinitions(definitions).map((item) => item.stage_code)).toEqual([
+      "land-activation", "planning", "future-stage",
+    ]);
   });
 });

@@ -5,7 +5,11 @@ import type { project_index_summary } from "../../rayfin/data/project_index_summ
 import type { project_team_member } from "../../rayfin/data/project_team_member";
 
 import { REPORTING_STAGE_OPTIONS } from "@/domain/targetProgrammeStages";
-import { buildReportingDatePatch, mapCanonicalReportingView } from "@/domain/reportingProgramme";
+import {
+  buildReportingDatePatch,
+  mapCanonicalReportingView,
+  sortReportingDefinitions,
+} from "@/domain/reportingProgramme";
 import {
   ensureCanonicalReportingProgramme,
   updateProjectProgrammeDates,
@@ -556,10 +560,9 @@ export async function getProjectIndexWorkspace(
     ensureCanonicalReportingProgramme(project.guid),
   ]);
   const recordsByDefinition = new Map(reporting.records.map((record) => [record.programme_item_definition_guid, record]));
-  const reportingRows = reporting.definitions
+  const reportingRows = sortReportingDefinitions(reporting.definitions)
     .map((definition) => ({ definition, record: recordsByDefinition.get(definition.guid) }))
     .filter((entry): entry is { definition: ProgrammeDefinitionRecord; record: ProjectProgrammeRecord } => Boolean(entry.record))
-    .sort((left, right) => left.definition.sort_order - right.definition.sort_order)
     .map(({ definition, record }) => mapCanonicalReportingView(definition, record));
 
   return {
