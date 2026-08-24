@@ -1,3 +1,5 @@
+import type { master_project_register } from "../../rayfin/data/master_project_register";
+import type { project_index_summary } from "../../rayfin/data/project_index_summary";
 import type { project_target_ddtc_detail } from "../../rayfin/data/project_target_ddtc_detail";
 import type { project_target_stage_status } from "../../rayfin/data/project_target_stage_status";
 
@@ -10,13 +12,14 @@ import {
 } from "@/domain/targetProgrammeStages";
 import {
   projectTargetProgrammeRows,
+  selectSingleLogicalRecord,
   validateDdtcPlanningStatus,
   validateTargetDateWrite,
   validateTargetStageStatus,
   type TargetProgrammeStageRow,
   type TargetProjectionInput,
 } from "@/domain/targetProgramme";
-import { parseDateOnly } from "@/domain/reportingProgramme";
+import { dateOnlyKey, parseDateOnly } from "@/domain/reportingProgramme";
 import {
   evaluateTargetProgramme,
   type DependencyDefinition,
@@ -88,9 +91,12 @@ const DDTC_DETAIL_FIELDS = [
   "created_by_user_id", "created_by_user_email", "updated_at",
   "updated_by_user_id", "updated_by_user_email",
 ] as const;
-
+const ACTIVE_PROJECT_FIELDS = ["guid", "effective_to"] as const;
+const PROJECT_SUMMARY_FIELDS = ["project_guid", "reporting_stage_code"] as const;
+const ACTIVE_EFFECTIVE_TO = "2099-12-31";
 
 type CurrentUser = { id: string; email: string };
+type ProjectProgrammeContext = { projectGuid: string; reportingStage: string };
 
 function getCurrentUser(): CurrentUser {
   const session = getRayfinClient().auth.getSession();
@@ -98,6 +104,21 @@ function getCurrentUser(): CurrentUser {
     throw new Error("You must be signed in to access Target Programme.");
   }
   return { id: session.user.id, email: session.user.email };
+}
+
+async function getPersistedProjectContext(projectGuid: string): Promise<ProjectProgrammeContext> {
+  const project = await getRayfinClient().data.master_project_register
+    .select(ACTIVE_PROJECT_FIELDS)
+    .where({ guid: { eq: projectGuid } })
+    .findFirst() as Pick<master_project_register, "guid" | "effective_to"> | null;
+  if (!project || dateOnlyKey(project.effective_to) !== ACTIVE_EFFECTIVE_TO) {
+    throw new Error("Target Programme writes require an active project.");
+  }
+  const summary = await getRayfinClient().data.project_index_summary
+    .select(PROJECT_SUMMARY_FIELDS)
+    .where({ project_guid: { eq: projectGuid } })
+    .findFirst() as Pick<project_index_summary, "project_guid" | "reporting_stage_code"> | null;
+  return { projectGuid, reportingStage: summary?.reporting_stage_code ?? "" };
 }
 
 function ruleDefinitions(definitions: ProgrammeDefinitionRecord[]): ProgrammeRuleDefinition[] {
@@ -172,8 +193,10 @@ async function ensureStageStatus(projectGuid: string, stageCode: string): Promis
   const client = getRayfinClient().data.project_target_stage_status;
   const existing = await client.select(STATUS_FIELDS)
     .where({ project_guid: { eq: projectGuid }, stage_code: { eq: stageCode } })
-    .findFirst();
-  if (existing) return existing;
+    .first(-1)
+    .execute();
+  const existingRecord = selectSingleLogicalRecord(existing, `Target stage status for ${projectGuid}/${stageCode}`);
+  if (existingRecord) return existingRecord;
 
   const user = getCurrentUser();
   const now = new Date();
@@ -192,10 +215,10 @@ export async function getOrEnsureTargetStageStatus(projectGuid: string, stageCod
 export async function updateTargetStageStatus(
   projectGuid: string,
   stageCode: string,
-  reportingStage: string,
   patch: { ragCode?: string; ragComment?: string },
 ): Promise<TargetStageStatusRecord> {
-  assertStageWriteable(stageCode, reportingStage);
+  const context = await getPersistedProjectContext(projectGuid);
+  assertStageWriteable(stageCode, context.reportingStage);
   if (patch.ragCode !== undefined) validateTargetStageStatus(patch.ragCode);
   const current = await ensureStageStatus(projectGuid, stageCode);
   const user = getCurrentUser();
@@ -210,8 +233,11 @@ export async function updateTargetStageStatus(
 export async function getOrEnsureTargetDdtcDetail(projectGuid: string): Promise<TargetDdtcDetailRecord> {
   const client = getRayfinClient().data.project_target_ddtc_detail;
   const existing = await client.select(DDTC_DETAIL_FIELDS)
-    .where({ project_guid: { eq: projectGuid } }).findFirst();
-  if (existing) return existing;
+    .where({ project_guid: { eq: projectGuid } })
+    .first(-1)
+    .execute();
+  const existingRecord = selectSingleLogicalRecord(existing, `DDTC detail for ${projectGuid}`);
+  if (existingRecord) return existingRecord;
 
   const user = getCurrentUser();
   const now = new Date();
@@ -225,10 +251,10 @@ export async function getOrEnsureTargetDdtcDetail(projectGuid: string): Promise<
 
 export async function updateTargetDdtcDetail(
   projectGuid: string,
-  reportingStage: string,
   planningStatusCode: string,
 ): Promise<TargetDdtcDetailRecord> {
-  assertStageWriteable("ddtc", reportingStage);
+  const context = await getPersistedProjectContext(projectGuid);
+  assertStageWriteable("ddtc", context.reportingStage);
   validateDdtcPlanningStatus(planningStatusCode);
   const current = await getOrEnsureTargetDdtcDetail(projectGuid);
   const user = getCurrentUser();
@@ -241,9 +267,9 @@ export async function updateTargetDdtcDetail(
 export async function getTargetProgrammeStageWorkspace(
   projectGuid: string,
   stageCode: string,
-  reportingStage: string,
 ): Promise<TargetProgrammeStageWorkspace> {
-  const stage = getStageState(stageCode, reportingStage);
+  const context = await getPersistedProjectContext(projectGuid);
+  const stage = getStageState(stageCode, context.reportingStage);
   const definitions = await listActiveProgrammeDefinitions({ programmeArea: "target" });
   const allDefinitions = await listActiveProgrammeDefinitions();
   const stageDefinitions = definitions.filter((definition) => definition.stage_code === stageCode);
@@ -309,29 +335,50 @@ export async function updateTargetProgrammeDate(
   definitionGuid: string,
   field: "target_start" | "target_end",
   value: string,
-  reportingStage: string,
 ): Promise<TargetProgrammeStageWorkspace> {
-  assertStageWriteable(stageCode, reportingStage);
+  return updateTargetProgrammeDates(projectGuid, stageCode, definitionGuid, {
+    [field]: value,
+  });
+}
+
+export async function updateTargetProgrammeDates(
+  projectGuid: string,
+  stageCode: string,
+  definitionGuid: string,
+  patch: { target_start?: string; target_end?: string },
+): Promise<TargetProgrammeStageWorkspace> {
+  const context = await getPersistedProjectContext(projectGuid);
+  assertStageWriteable(stageCode, context.reportingStage);
   const definitions = await listActiveProgrammeDefinitions();
   const definition = definitions.find((candidate) => candidate.guid === definitionGuid);
   if (!definition || definition.programme_area !== "target" || definition.stage_code !== stageCode) {
     throw new Error("Target definition is not active in the requested stage.");
   }
+  if (Object.keys(patch).length === 0) throw new Error("At least one Target date must be supplied.");
   const dependencies = await listActiveDependencyDefinitions();
-  const record = await ensureProjectProgrammeRecord(projectGuid, definitionGuid);
   const records = await listProjectProgrammeRecords(projectGuid);
-  const current = records.find((candidate) => candidate.id === record.id) ?? record;
-  const parsed = value ? parseDateOnly(value) ?? null : null;
-  validateTargetDateWrite({
-    rowType: definition.row_type as "activity" | "milestone" | "summary" | "reporting_reference",
-    definitionIsEditable: definition.is_editable,
-    stageIsEditable: true,
-    field,
-    controlled: fieldControllers(dependencies).has(`${definitionGuid}:${field}`),
-    value: parsed,
-    currentStart: current.target_start,
-    currentEnd: current.target_end,
-  });
-  await updateProjectProgrammeDates(record.id, { [field]: parsed });
-  return getTargetProgrammeStageWorkspace(projectGuid, stageCode, reportingStage);
+  const current = records.find((candidate) => candidate.programme_item_definition_guid === definitionGuid);
+  const parsedPatch: { target_start?: Date | null; target_end?: Date | null } = {};
+  if (Object.prototype.hasOwnProperty.call(patch, "target_start")) {
+    parsedPatch.target_start = patch.target_start ? parseDateOnly(patch.target_start) ?? null : null;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "target_end")) {
+    parsedPatch.target_end = patch.target_end ? parseDateOnly(patch.target_end) ?? null : null;
+  }
+  const rowType = definition.row_type as "activity" | "milestone" | "summary" | "reporting_reference";
+  for (const field of Object.keys(parsedPatch) as Array<"target_start" | "target_end">) {
+    validateTargetDateWrite({
+      rowType,
+      definitionIsEditable: definition.is_editable,
+      stageIsEditable: true,
+      field,
+      controlled: fieldControllers(dependencies).has(`${definitionGuid}:${field}`),
+      value: parsedPatch[field] ?? null,
+      currentStart: Object.prototype.hasOwnProperty.call(parsedPatch, "target_start") ? parsedPatch.target_start ?? null : current?.target_start,
+      currentEnd: Object.prototype.hasOwnProperty.call(parsedPatch, "target_end") ? parsedPatch.target_end ?? null : current?.target_end,
+    });
+  }
+  const record = await ensureProjectProgrammeRecord(projectGuid, definitionGuid);
+  await updateProjectProgrammeDates(record.id, parsedPatch);
+  return getTargetProgrammeStageWorkspace(projectGuid, stageCode);
 }

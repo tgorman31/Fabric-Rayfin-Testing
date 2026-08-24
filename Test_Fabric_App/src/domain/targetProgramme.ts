@@ -69,6 +69,16 @@ export function projectTargetProgrammeRows(inputs: readonly TargetProjectionInpu
   }).sort((left, right) => left.sortOrder - right.sortOrder || left.itemCode.localeCompare(right.itemCode));
 }
 
+export function buildTargetDatePatch(
+  previous: Pick<TargetProgrammeStageRow, "startDate" | "endDate">,
+  next: Pick<TargetProgrammeStageRow, "startDate" | "endDate">,
+): { target_start?: string; target_end?: string } {
+  const patch: { target_start?: string; target_end?: string } = {};
+  if (previous.startDate !== next.startDate) patch.target_start = next.startDate;
+  if (previous.endDate !== next.endDate) patch.target_end = next.endDate;
+  return patch;
+}
+
 export function validateTargetDateWrite(input: {
   rowType: TargetRowType;
   definitionIsEditable: boolean;
@@ -76,8 +86,8 @@ export function validateTargetDateWrite(input: {
   field: "target_start" | "target_end";
   controlled: boolean;
   value: Date | null;
-  currentStart?: Date;
-  currentEnd?: Date;
+  currentStart?: Date | null;
+  currentEnd?: Date | null;
 }): void {
   if (!input.stageIsEditable) throw new Error("Previous or unmapped Target Programme stages are read-only.");
   if (!input.definitionIsEditable) throw new Error("This Target Programme row is read-only.");
@@ -87,6 +97,11 @@ export function validateTargetDateWrite(input: {
   const start = input.field === "target_start" ? input.value : input.currentStart;
   const end = input.field === "target_end" ? input.value : input.currentEnd;
   if (start && end && end < start) throw new Error("Target End must be on or after Target Start.");
+}
+
+export function selectSingleLogicalRecord<T>(records: readonly T[], label: string): T | undefined {
+  if (records.length > 1) throw new Error(`Data integrity error: multiple ${label} records exist.`);
+  return records[0];
 }
 
 export function validateTargetStageStatus(ragCode: string): void {

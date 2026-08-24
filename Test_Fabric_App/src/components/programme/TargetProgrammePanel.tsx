@@ -81,7 +81,6 @@ export function TargetProgrammePanel({ projectGuid, reportingStage }: { projectG
         <TargetProgrammeStageWorkspace
           key={`${projectGuid}-${reportingStage}-${selectedStage.code}`}
           projectGuid={projectGuid}
-          reportingStage={reportingStage}
           stage={selectedStage}
         />
       ) : null}

@@ -8,11 +8,11 @@ import { buildTimelineRange, getTimelinePlacement, type ProgrammeTimelineItem } 
 import {
   getTargetProgrammeStageWorkspace,
   updateTargetDdtcDetail,
-  updateTargetProgrammeDate,
+  updateTargetProgrammeDates,
   updateTargetStageStatus,
   type TargetProgrammeStageWorkspace,
 } from "@/services/targetProgrammeService";
-import type { TargetProgrammeStageRow } from "@/domain/targetProgramme";
+import { buildTargetDatePatch, type TargetProgrammeStageRow } from "@/domain/targetProgramme";
 import type { TargetStageState } from "@/domain/targetProgrammeStages";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -43,11 +43,9 @@ function statusLabel(state: SaveState): string {
 
 export function TargetProgrammeStageWorkspace({
   projectGuid,
-  reportingStage,
   stage,
 }: {
   projectGuid: string;
-  reportingStage: string;
   stage: TargetStageState;
 }) {
   const [workspace, setWorkspace] = useState<TargetProgrammeStageWorkspace | null>(null);
@@ -61,7 +59,7 @@ export function TargetProgrammeStageWorkspace({
   const reload = useCallback(async () => {
     try {
       setError(null);
-      const next = await getTargetProgrammeStageWorkspace(projectGuid, stage.code, reportingStage);
+      const next = await getTargetProgrammeStageWorkspace(projectGuid, stage.code);
       setWorkspace(next);
       setPlanningStatus(next.ddtcDetail?.planning_status_code ?? "");
       setRagCode(next.stageStatus.rag_code ?? "");
@@ -69,7 +67,7 @@ export function TargetProgrammeStageWorkspace({
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load Target Programme stage.");
     }
-  }, [projectGuid, reportingStage, stage.code]);
+  }, [projectGuid, stage.code]);
 
   useEffect(() => {
     void reload();
@@ -95,16 +93,15 @@ export function TargetProgrammeStageWorkspace({
     },
     onCommit: (item, previous) => {
       if (!previous) return;
-      const changedField = item.startDate !== previous.startDate ? "target_start" : item.endDate !== previous.endDate ? "target_end" : null;
-      if (!changedField) return;
-      void saveDate(item, changedField, changedField === "target_start" ? item.startDate : item.endDate);
+      const patch = buildTargetDatePatch(previous, item);
+      if (Object.keys(patch).length > 0) void saveDates(item, patch);
     },
   });
 
-  async function saveDate(item: TargetProgrammeStageRow, field: "target_start" | "target_end", value: string) {
+  async function saveDates(item: TargetProgrammeStageRow, patch: { target_start?: string; target_end?: string }) {
     setSaveState("saving");
     try {
-      const next = await updateTargetProgrammeDate(projectGuid, stage.code, item.definitionGuid, field, value, reportingStage);
+      const next = await updateTargetProgrammeDates(projectGuid, stage.code, item.definitionGuid, patch);
       setWorkspace(next);
       setSaveState("saved");
     } catch (err) {
@@ -114,10 +111,14 @@ export function TargetProgrammeStageWorkspace({
     }
   }
 
+  async function saveDate(item: TargetProgrammeStageRow, field: "target_start" | "target_end", value: string) {
+    void saveDates(item, { [field]: value });
+  }
+
   async function saveStatus(patch: { ragCode?: string; ragComment?: string }) {
     setSaveState("saving");
     try {
-      const next = await updateTargetStageStatus(projectGuid, stage.code, reportingStage, patch);
+      const next = await updateTargetStageStatus(projectGuid, stage.code, patch);
       setWorkspace((current) => current ? { ...current, stageStatus: next } : current);
       setSaveState("saved");
     } catch (err) {
@@ -130,7 +131,7 @@ export function TargetProgrammeStageWorkspace({
     setPlanningStatus(value);
     setSaveState("saving");
     try {
-      const next = await updateTargetDdtcDetail(projectGuid, reportingStage, value);
+      const next = await updateTargetDdtcDetail(projectGuid, value);
       setWorkspace((current) => current ? { ...current, ddtcDetail: next } : current);
       setSaveState("saved");
     } catch (err) {

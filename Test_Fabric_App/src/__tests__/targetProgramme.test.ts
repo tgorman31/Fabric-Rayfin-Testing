@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildTargetDatePatch,
   projectTargetProgrammeRows,
+  selectSingleLogicalRecord,
   validateDdtcPlanningStatus,
   validateTargetDateWrite,
   validateTargetStageStatus,
@@ -9,15 +11,16 @@ import {
 import { buildTargetStageStates } from "@/domain/targetProgrammeStages";
 
 const day = (value: string) => new Date(`${value}T00:00:00`);
-const current = buildTargetStageStates("Planning").find((stage) => stage.code === "ddtc")!;
-const previous = buildTargetStageStates("Construction").find((stage) => stage.code === "ddtc")!;
-const unmapped = buildTargetStageStates("").find((stage) => stage.code === "ddtc")!;
+const ddtcCurrent = buildTargetStageStates("Detailed Design / Tender / Contract").find((stage) => stage.code === "ddtc")!;
+const ddtcFuture = buildTargetStageStates("Planning").find((stage) => stage.code === "ddtc")!;
+const ddtcPrevious = buildTargetStageStates("Construction").find((stage) => stage.code === "ddtc")!;
+const ddtcUnmapped = buildTargetStageStates("").find((stage) => stage.code === "ddtc")!;
 
 function input(overrides: Partial<Parameters<typeof projectTargetProgrammeRows>[0][number]> = {}) {
   return {
     definition: { guid: "activity", itemCode: "activity", rowLabel: "Activity", rowType: "activity" as const, sortOrder: 2, isEditable: true },
     targetStart: day("2026-04-01"), targetEnd: day("2026-04-05"),
-    startControlled: false, endControlled: false, stage: current,
+    startControlled: false, endControlled: false, stage: ddtcFuture,
     ...overrides,
   };
 }
@@ -59,10 +62,24 @@ describe("Target DDTC row projection", () => {
     expect(row).toMatchObject({ isStartEditable: false, isEndEditable: true, isMoveEditable: false });
   });
 
-  it("makes previous and unmapped stages read-only while future stages remain editable", () => {
-    expect(projectTargetProgrammeRows([input({ stage: previous })])[0].isEndEditable).toBe(false);
-    expect(projectTargetProgrammeRows([input({ stage: unmapped })])[0].isEndEditable).toBe(false);
-    expect(projectTargetProgrammeRows([input({ stage: buildTargetStageStates("Planning").find((stage) => stage.code === "construction")! })])[0].isEndEditable).toBe(true);
+  it("projects every DDTC stage state explicitly", () => {
+    expect(ddtcCurrent).toMatchObject({ position: "current", isEditable: true });
+    expect(ddtcFuture).toMatchObject({ position: "future", isEditable: true });
+    expect(ddtcPrevious).toMatchObject({ position: "previous", isEditable: false });
+    expect(ddtcUnmapped).toMatchObject({ position: "unmapped", isEditable: false });
+    expect(projectTargetProgrammeRows([input({ stage: ddtcCurrent })])[0].isEndEditable).toBe(true);
+    expect(projectTargetProgrammeRows([input({ stage: ddtcFuture })])[0].isEndEditable).toBe(true);
+    expect(projectTargetProgrammeRows([input({ stage: ddtcPrevious })])[0].isEndEditable).toBe(false);
+    expect(projectTargetProgrammeRows([input({ stage: ddtcUnmapped })])[0].isEndEditable).toBe(false);
+  });
+});
+
+describe("Target DDTC date patches", () => {
+  it("retains both changed values for an atomic whole-bar move", () => {
+    expect(buildTargetDatePatch(
+      { startDate: "2026-04-01", endDate: "2026-04-05" },
+      { startDate: "2026-05-01", endDate: "2026-05-05" },
+    )).toEqual({ target_start: "2026-05-01", target_end: "2026-05-05" });
   });
 });
 
@@ -77,6 +94,10 @@ describe("Target DDTC write rules", () => {
   it("accepts a valid authoritative activity and explicit clearing", () => {
     expect(() => validateTargetDateWrite({ rowType: "activity", definitionIsEditable: true, stageIsEditable: true, field: "target_end", controlled: false, value: null, currentStart: day("2026-02-01") })).not.toThrow();
     expect(() => validateTargetDateWrite({ rowType: "milestone", definitionIsEditable: true, stageIsEditable: true, field: "target_end", controlled: false, value: day("2026-02-01") })).not.toThrow();
+  });
+
+  it("rejects duplicate logical stage records instead of selecting one", () => {
+    expect(() => selectSingleLogicalRecord([{ id: "one" }, { id: "two" }], "DDTC detail")).toThrow("multiple DDTC detail");
   });
 
   it("validates RAG and Planning Status values", () => {
