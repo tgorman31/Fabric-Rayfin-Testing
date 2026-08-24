@@ -5,6 +5,7 @@ import { isProgrammeAdminBootstrapEligible } from "@/domain/programmeAdminAuth";
 import { useAuth } from "@/hooks/AuthContext";
 import { bootstrapCurrentUserProgrammeAdmin } from "@/services/programmeAdminService";
 import { useProgrammeAdminAccess } from "@/hooks/useProgrammeAdminAccess";
+import { useProjectRegisterAccess } from "@/hooks/useProjectRegisterAccess";
 
 const launcherCards = [
   {
@@ -28,21 +29,27 @@ const launcherCards = [
 export function AppLauncherPage() {
   const { signOut, user } = useAuth();
   const { loading: adminAccessLoading, hasAccess: hasProgrammeAdminAccess, refresh: refreshAdminAccess } = useProgrammeAdminAccess();
+  const { loading: registerAccessLoading, hasAccess: hasProjectRegisterAccess } = useProjectRegisterAccess();
   const [bootstrapState, setBootstrapState] = useState<"idle" | "saving" | "error">("idle");
   const bootstrapEligible = !adminAccessLoading && !hasProgrammeAdminAccess && isProgrammeAdminBootstrapEligible({
     isDevelopment: import.meta.env.DEV,
     configuredEmail: import.meta.env.VITE_PROGRAMME_ADMIN_BOOTSTRAP_EMAIL,
     currentUserEmail: user?.email,
   });
+  const registerCards = registerAccessLoading
+    ? launcherCards.filter((card) => card.title !== "Project Register")
+    : hasProjectRegisterAccess
+      ? launcherCards
+      : launcherCards.filter((card) => card.title !== "Project Register");
   const visibleCards = !adminAccessLoading && hasProgrammeAdminAccess
-    ? [...launcherCards, {
+    ? [...registerCards, {
         title: "Admin",
         description: "Maintain programme definitions and programme configuration.",
         href: "/admin",
         accent: "from-[#8fb73e] to-[#025437]",
         available: true,
       }]
-    : launcherCards;
+    : registerCards;
 
   return (
     <div className="min-h-screen bg-[#f4f6f5] text-gray-950">
