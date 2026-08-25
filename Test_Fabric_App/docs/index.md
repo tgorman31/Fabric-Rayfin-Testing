@@ -18,7 +18,7 @@ Read [How the application works](getting-started/how-the-application-works.md), 
 
 ### IT or security reviewer
 
-Start with the [security overview](security/security-overview.md) and the [production-readiness register](security/production-readiness-register.md), then compare them with the [architecture overview](architecture/architecture-overview.md) and [Architecture Decision Records](decisions/README.md), [`SPEC.md`](../SPEC.md), and [`IMPLEMENTATION-PLAN.md`](../IMPLEMENTATION-PLAN.md). This is an initial evidence-based review, not a certification.
+Start with the [security overview](security/security-overview.md), then read the [threat model](security/threat-model.md) and [production-readiness register](security/production-readiness-register.md). Compare them with the [architecture overview](architecture/architecture-overview.md), [data flows and trust boundaries](architecture/data-flows-and-trust-boundaries.md), [Architecture Decision Records](decisions/README.md), [`SPEC.md`](../SPEC.md), and [`IMPLEMENTATION-PLAN.md`](../IMPLEMENTATION-PLAN.md). This is an initial evidence-based review, not a certification.
 
 ### Support or troubleshooting reader
 
@@ -39,7 +39,7 @@ When current code differs from a planned document, documentation should say **Cu
 
 ## Planned documentation
 
-The following are intentionally not created as empty files: detailed Programme Admin user manual, data model reference, deployment standard operating procedure, incident-response runbook, backup/recovery procedure, and full threat model.
+The following are intentionally not created as empty files: detailed Programme Admin user manual, data model reference, deployment standard operating procedure, incident-response runbook, and backup/recovery procedure.
 
 A future Help/Documentation surface may render a curated subset of these Markdown files read-only inside the application. If that happens, Git and the version-controlled Markdown remain authoritative.
 
@@ -47,6 +47,8 @@ A future Help/Documentation surface may render a curated subset of these Markdow
 
 - [Architecture overview](architecture/architecture-overview.md)
 - [Security overview](security/security-overview.md)
+- [Threat model](security/threat-model.md)
+- [Data flows and trust boundaries](architecture/data-flows-and-trust-boundaries.md)
 - [How the application works](getting-started/how-the-application-works.md)
 - [Codebase tour](getting-started/codebase-tour.md)
 - [React and TypeScript for this project](development/react-typescript-for-this-project.md)
