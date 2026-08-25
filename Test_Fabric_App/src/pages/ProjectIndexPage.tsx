@@ -2081,6 +2081,7 @@ export function ProjectIndexPage() {
               </section>
             ) : activeTab === "target-programme" ? (
               <TargetProgrammePanel
+                projectGuid={workspace.summary.projectGuid}
                 reportingStage={workspace.summary.reportingStage}
               />
             ) : activeTab === "tenure" ? (

@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 
+import { TargetProgrammeStageWorkspace } from "@/components/programme/TargetProgrammeStageWorkspace";
+
 import {
   buildTargetStageStates,
   resolveTargetStageCode,
@@ -31,7 +33,7 @@ function positionClasses(stage: TargetStageState): string {
   return "border-slate-200 bg-white text-slate-700 hover:border-[#8fb73e] hover:bg-[#f7fbf8]";
 }
 
-export function TargetProgrammePanel({ reportingStage }: { reportingStage: string }) {
+export function TargetProgrammePanel({ projectGuid, reportingStage }: { projectGuid: string; reportingStage: string }) {
   const stages = useMemo(
     () => buildTargetStageStates(reportingStage),
     [reportingStage],
@@ -75,7 +77,14 @@ export function TargetProgrammePanel({ reportingStage }: { reportingStage: strin
         ))}
       </nav>
 
-      <div className="mt-6 rounded-4xl border border-slate-200 bg-slate-50/70 p-6">
+      {selectedStage.code === "ddtc" ? (
+        <TargetProgrammeStageWorkspace
+          key={`${projectGuid}-${reportingStage}-${selectedStage.code}`}
+          projectGuid={projectGuid}
+          stage={selectedStage}
+        />
+      ) : null}
+      {selectedStage.code !== "ddtc" ? <div className="mt-6 rounded-4xl border border-slate-200 bg-slate-50/70 p-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Selected stage</p>
@@ -90,7 +99,7 @@ export function TargetProgrammePanel({ reportingStage }: { reportingStage: strin
             ? "This stage is available for viewing only until Reporting Stage is mapped."
             : "The stage workspace is ready for programme content in a subsequent implementation slice."}
         </p>
-      </div>
+      </div> : null}
     </section>
   );
 }

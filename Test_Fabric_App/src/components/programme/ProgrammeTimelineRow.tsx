@@ -1,6 +1,6 @@
 import { useMemo, useRef } from "react";
 import type { PointerEvent } from "react";
-import { buildTimelineSegments, getTimelineGridScale, type ProgrammeTimelineItem, type TimelineRange, type TimelineScale } from "@/utils/programmeTimeline";
+import { buildTimelineSegments, getTimelineGridScale, isTimelineEndEditable, isTimelineMoveEditable, isTimelineStartEditable, type ProgrammeTimelineItem, type TimelineRange, type TimelineScale } from "@/utils/programmeTimeline";
 
 export type ProgrammeTimelineTheme = { barClass: string; railClass: string };
 
@@ -22,8 +22,11 @@ export function ProgrammeTimelineRow({ item, range, scale, dayWidth, placement, 
     <div className="flex h-full">{segments.map((segment, index) => <div key={segment.key} className={`h-full border-l border-slate-200 first:border-l-0 ${index % 2 === 0 ? "bg-slate-50/80" : "bg-white"}`} style={{ width: segment.spanDays * dayWidth }} />)}</div>
     {placement ? <div className="absolute inset-0">
       {item.isMilestone ? <div className={`absolute top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rotate-45 ${theme.railClass}`} style={{ left: placement.left + dayWidth / 2 }} aria-label={`${item.rowLabel} milestone`} /> : <div className={`absolute top-1/2 h-11 -translate-y-1/2 rounded-full ${theme.railClass}`} style={{ left: placement.left, width: placement.width }}>
-        <div onPointerDown={(event) => item.isEditable ? onMoveStart(event, item, rowRef.current, dayWidth) : undefined} className={`absolute inset-x-1.5 top-1/2 h-7 -translate-y-1/2 rounded-full bg-linear-to-r ${theme.barClass} shadow-sm ${item.isEditable ? "cursor-grab active:cursor-grabbing" : ""}`} />
-        {item.isEditable ? <><button type="button" onPointerDown={(event) => onResizeStart(event, item, "start", rowRef.current)} className="absolute left-1 top-1/2 h-7 w-3 -translate-y-1/2 cursor-ew-resize rounded-full border border-white/80 bg-white/90 shadow-sm" aria-label={`Adjust start date for ${item.rowLabel}`} /><button type="button" onPointerDown={(event) => onResizeStart(event, item, "end", rowRef.current)} className="absolute right-1 top-1/2 h-7 w-3 -translate-y-1/2 cursor-ew-resize rounded-full border border-white/80 bg-white/90 shadow-sm" aria-label={`Adjust end date for ${item.rowLabel}`} /></> : null}
+        <div onPointerDown={(event) => isTimelineMoveEditable(item) ? onMoveStart(event, item, rowRef.current, dayWidth) : undefined} className={`absolute inset-x-1.5 top-1/2 h-7 -translate-y-1/2 rounded-full bg-linear-to-r ${theme.barClass} shadow-sm ${isTimelineMoveEditable(item) ? "cursor-grab active:cursor-grabbing" : ""}`} />
+        {isTimelineStartEditable(item) || isTimelineEndEditable(item) ? <>
+          {isTimelineStartEditable(item) ? <button type="button" onPointerDown={(event) => onResizeStart(event, item, "start", rowRef.current)} className="absolute left-1 top-1/2 h-7 w-3 -translate-y-1/2 cursor-ew-resize rounded-full border border-white/80 bg-white/90 shadow-sm" aria-label={`Adjust start date for ${item.rowLabel}`} /> : null}
+          {isTimelineEndEditable(item) ? <button type="button" onPointerDown={(event) => onResizeStart(event, item, "end", rowRef.current)} className="absolute right-1 top-1/2 h-7 w-3 -translate-y-1/2 cursor-ew-resize rounded-full border border-white/80 bg-white/90 shadow-sm" aria-label={`Adjust end date for ${item.rowLabel}`} /> : null}
+        </> : null}
       </div>}
     </div> : null}
   </div>;

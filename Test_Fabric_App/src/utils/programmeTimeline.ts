@@ -4,9 +4,24 @@ export interface ProgrammeTimelineItem {
   id: string;
   rowLabel: string;
   isEditable: boolean;
+  isStartEditable?: boolean;
+  isEndEditable?: boolean;
+  isMoveEditable?: boolean;
   isMilestone?: boolean;
   startDate: string;
   endDate: string;
+}
+
+export function isTimelineStartEditable(item: ProgrammeTimelineItem): boolean {
+  return item.isStartEditable ?? item.isEditable;
+}
+
+export function isTimelineEndEditable(item: ProgrammeTimelineItem): boolean {
+  return item.isEndEditable ?? item.isEditable;
+}
+
+export function isTimelineMoveEditable(item: ProgrammeTimelineItem): boolean {
+  return item.isMoveEditable ?? item.isEditable;
 }
 
 export type TimelineRange = {
