@@ -5,6 +5,7 @@ import {
   isImplementedTargetStage,
   projectTargetProgrammeStageWorkspace,
   type ProjectProgrammeClientState,
+  type TargetPlanningDetailPatch,
 } from "@/services/targetProgrammeService";
 
 import {
@@ -39,16 +40,17 @@ function positionClasses(stage: TargetStageState): string {
   return "border-slate-200 bg-white text-slate-700 hover:border-[#8fb73e] hover:bg-[#f7fbf8]";
 }
 
-export function TargetProgrammePanel({ projectGuid, reportingStage, projectIsActive, programme, saveState, error, onDatePatch, onStatusPatch, onPlanningStatus }: {
+export function TargetProgrammePanel({ projectGuid, reportingStage, projectIsActive, programme, saveState, error, onDatePatch, onStatusPatch, onPlanningStatus, onPlanningDetail }: {
   projectGuid: string;
   reportingStage: string;
   projectIsActive: boolean;
   programme: ProjectProgrammeClientState;
   saveState: "idle" | "saving" | "saved" | "error";
   error: string | null;
-  onDatePatch: (definitionGuid: string, patch: { target_start?: string; target_end?: string }) => void;
-  onStatusPatch: (patch: { ragCode?: string; ragComment?: string }) => void;
+  onDatePatch: (stageCode: string, definitionGuid: string, patch: { target_start?: string; target_end?: string }) => void;
+  onStatusPatch: (stageCode: string, patch: { ragCode?: string; ragComment?: string }) => void;
   onPlanningStatus: (value: string) => void;
+  onPlanningDetail: (patch: TargetPlanningDetailPatch) => void;
 }) {
   const stages = useMemo(
     () => buildTargetStageStates(reportingStage),
@@ -59,7 +61,8 @@ export function TargetProgrammePanel({ projectGuid, reportingStage, projectIsAct
     () => mappedStage ?? TARGET_PROGRAMME_STAGES[0].code,
   );
   const selectedStage = stages.find((stage) => stage.code === selectedStageCode) ?? stages[0];
-  const selectedWorkspace = isImplementedTargetStage(selectedStage.code)
+  const implemented = isImplementedTargetStage(selectedStage.code);
+  const selectedWorkspace = implemented
     ? projectTargetProgrammeStageWorkspace(programme, reportingStage, selectedStage.code, { projectIsEditable: projectIsActive })
     : null;
 
@@ -69,7 +72,7 @@ export function TargetProgrammePanel({ projectGuid, reportingStage, projectIsAct
         <div>
           <h3 className="text-xl font-semibold text-slate-950">Target Programme</h3>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
-            Select a programme stage to view its workspace. Programme content will be added in a subsequent implementation slice.
+            Select a programme stage to view its configured programme workspace.
           </p>
         </div>
         {!mappedStage ? (
@@ -96,7 +99,7 @@ export function TargetProgrammePanel({ projectGuid, reportingStage, projectIsAct
         ))}
       </nav>
 
-      {selectedStage.code === "ddtc" ? (
+      {implemented && selectedWorkspace ? (
         <TargetProgrammeStageWorkspace
           key={`${projectGuid}-${reportingStage}-${selectedStage.code}`}
           workspace={selectedWorkspace!}
@@ -107,9 +110,10 @@ export function TargetProgrammePanel({ projectGuid, reportingStage, projectIsAct
           onDatePatch={onDatePatch}
           onStatusPatch={onStatusPatch}
           onPlanningStatus={onPlanningStatus}
+          onPlanningDetail={onPlanningDetail}
         />
       ) : null}
-      {selectedStage.code !== "ddtc" ? <div className="mt-6 rounded-4xl border border-slate-200 bg-slate-50/70 p-6">
+      {!implemented ? <div className="mt-6 rounded-4xl border border-slate-200 bg-slate-50/70 p-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Selected stage</p>

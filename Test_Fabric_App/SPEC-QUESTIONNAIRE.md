@@ -138,8 +138,9 @@ This file now acts as a compact decision register and outstanding-question list 
 - activity = `Start Date` + `End Date`
 - summary = formula-driven/read-only row over a maintained group of child rows
 - reporting reference = read-only Reporting Programme date shown in Target Programme
-- summary start = earliest applicable child start
-- summary end = latest applicable child end
+- summary start = earliest applicable child start; a milestone child's `target_end` point date is also its start candidate
+- summary end = latest applicable child end; a milestone child's `target_end` point date is also its end candidate
+- a summary containing only milestones can therefore have both a derived Start and End
 - summaries may exist at stage level and intermediate grouping levels
 - any grey/formula-driven workbook field is derived/read-only in the app
 
@@ -182,7 +183,14 @@ This file now acts as a compact decision register and outstanding-question list 
 - own `RAG` / `RAG Comment`
 
 ### Planning
-- v1 rows fixed/centrally defined
+- v1 rows fixed/centrally defined in programme configuration; no catalogue rows are hard-coded in the app
+- confirmed summary hierarchy is:
+  - `Project Kick-Off - Stage 1A Complete`: Appointments Executed, Dev. Brief Issued, RIBA S1 Complete MCA
+  - `RIBA - Stage 2`: RIBA S1 Complete MCA, Design Freeze
+  - `RIBA - Stage 3`: Design Freeze, LRD Pre-App Meeting, Planning Legal Review
+  - `Planning Period`: Planning Lodged, Planning Decision, Appeal Period
+  - `Planning Stage`: Project Kick-Off - Stage 1A Complete, RIBA - Stage 2, RIBA - Stage 3, Planning Period
+- confirmed dependency: Planning Decision End -> Appeal Period Start, FS with zero lag
 - stage/intermediate summaries include patterns such as `Planning Stage` and `Project Kick-Off - Stage 1A Complete`
 - `Advancing Gateway 4?`: `Yes`, `No`, `Yes (Partial)`
 - `Planning Granted?`: `Yes`, `No`

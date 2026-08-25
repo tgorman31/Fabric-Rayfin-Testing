@@ -74,7 +74,7 @@ function record(
 }
 
 describe("target summary rules", () => {
-  it("derives earliest start and latest end, with milestones contributing only end", () => {
+  it("derives earliest start and latest end, with milestone end as its point date", () => {
     const definitions = [summary("summary"), activity("activity"), milestone("milestone")];
     const dates = deriveTargetSummaryDates(
       definitions,
@@ -89,6 +89,41 @@ describe("target summary rules", () => {
       targetStart: date(2025, 2, 1),
       targetEnd: date(2025, 2, 10),
     });
+  });
+
+  it("derives the confirmed Planning nested summary hierarchy", () => {
+    const definitions = [
+      summary("planning-stage"), summary("kick-off"), summary("riba-2"), summary("riba-3"), summary("planning-period"),
+      milestone("appointments"), milestone("brief"), milestone("riba-1"), milestone("design-freeze"), milestone("lrd-pre-app"),
+      activity("legal-review"), milestone("planning-lodged"), milestone("planning-decision"), activity("appeal-period"),
+    ];
+    const dates = deriveTargetSummaryDates(
+      definitions,
+      [
+        record("appointments", { targetEnd: date(2020, 8, 27) }),
+        record("brief", { targetEnd: date(2021, 2, 8) }),
+        record("riba-1", { targetEnd: date(2021, 12, 8) }),
+        record("design-freeze", { targetEnd: date(2022, 2, 8) }),
+        record("lrd-pre-app", { targetEnd: date(2022, 4, 8) }),
+        record("legal-review", { targetStart: date(2022, 3, 8), targetEnd: date(2022, 4, 8) }),
+        record("planning-lodged", { targetEnd: date(2022, 4, 8) }),
+        record("planning-decision", { targetEnd: date(2023, 3, 21) }),
+        record("appeal-period", { targetStart: date(2023, 3, 21), targetEnd: date(2023, 5, 16) }),
+      ],
+      [
+        member("kick-off-appointments", "kick-off", "appointments"), member("kick-off-brief", "kick-off", "brief"), member("kick-off-riba", "kick-off", "riba-1"),
+        member("riba-2-riba", "riba-2", "riba-1"), member("riba-2-freeze", "riba-2", "design-freeze"),
+        member("riba-3-freeze", "riba-3", "design-freeze"), member("riba-3-lrd", "riba-3", "lrd-pre-app"), member("riba-3-legal", "riba-3", "legal-review"),
+        member("period-lodged", "planning-period", "planning-lodged"), member("period-decision", "planning-period", "planning-decision"), member("period-appeal", "planning-period", "appeal-period"),
+        member("stage-kick-off", "planning-stage", "kick-off"), member("stage-riba-2", "planning-stage", "riba-2"), member("stage-riba-3", "planning-stage", "riba-3"), member("stage-period", "planning-stage", "planning-period"),
+      ],
+    );
+
+    expect(dates.get("kick-off")).toEqual({ targetStart: date(2020, 8, 27), targetEnd: date(2021, 12, 8) });
+    expect(dates.get("riba-2")).toEqual({ targetStart: date(2021, 12, 8), targetEnd: date(2022, 2, 8) });
+    expect(dates.get("riba-3")).toEqual({ targetStart: date(2022, 2, 8), targetEnd: date(2022, 4, 8) });
+    expect(dates.get("planning-period")).toEqual({ targetStart: date(2022, 4, 8), targetEnd: date(2023, 5, 16) });
+    expect(dates.get("planning-stage")).toEqual({ targetStart: date(2020, 8, 27), targetEnd: date(2023, 5, 16) });
   });
 
   it("supports nested summaries and leaves missing dates undefined", () => {
@@ -119,6 +154,15 @@ describe("target summary rules", () => {
       [summary("a"), summary("b")],
       [member("a-b", "a", "b"), member("b-a", "b", "a")],
     )).toThrow("Summary membership cycle detected");
+  });
+
+  it("derives a summary start from a milestone-only child", () => {
+    const dates = deriveTargetSummaryDates(
+      [summary("summary"), milestone("milestone")],
+      [record("milestone", { targetEnd: date(2025, 3, 4) })],
+      [member("membership", "summary", "milestone")],
+    );
+    expect(dates.get("summary")).toEqual({ targetStart: date(2025, 3, 4), targetEnd: date(2025, 3, 4) });
   });
 });
 
@@ -164,6 +208,23 @@ describe("target dependency rules", () => {
 
     expect(evaluated[1].targetStart).toEqual(date(2025, 6, 10));
     expect(evaluated[1].targetEnd).toEqual(date(2025, 6, 12));
+  });
+
+  it("propagates the confirmed Planning Decision to Appeal Period", () => {
+    const definitions = [milestone("planning-decision"), activity("appeal-period")];
+    const records = [
+      record("planning-decision", { targetEnd: date(2023, 3, 21) }),
+      record("appeal-period", { targetStart: date(2023, 3, 21), targetEnd: date(2023, 5, 16) }),
+    ];
+    const planningDependency = dependency("planning-decision-appeal", "planning-decision", "appeal-period", "target_start");
+    const initial = evaluateTargetDependencies(definitions, records, [planningDependency]);
+    expect(initial[1].targetStart).toEqual(date(2023, 3, 21));
+
+    records[0].targetEnd = date(2023, 4, 1);
+    const moved = evaluateTargetDependencies(definitions, records, [planningDependency]);
+    expect(moved[1].targetStart).toEqual(date(2023, 4, 1));
+    expect(moved[1].targetEnd).toEqual(date(2023, 5, 27));
+    expect(records[1].targetEnd).toEqual(date(2023, 5, 16));
   });
 
   it("rejects duplicate controllers, cycles, and invalid endpoints", () => {

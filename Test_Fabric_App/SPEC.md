@@ -347,8 +347,9 @@ V1 programme definitions support these row types:
 Rules:
 - a normal activity/milestone exposes the project's **target** dates
 - a summary row is read-only and derives:
-  - start = earliest applicable child start
-  - end = latest applicable child end
+  - start = earliest applicable child start; for a milestone child, its `target_end` point date is the start candidate
+  - end = latest applicable child end; for a milestone child, its `target_end` point date is the end candidate
+  - therefore a milestone point date contributes to both summary Start and summary End range calculation
 - summary rows are not limited to one per stage; nested/intermediate summaries are valid, e.g. `Project Kick-Off - Stage 1A Complete` in Planning
 - any field that was grey/formula-driven in the workbook should be represented as derived/read-only rather than independently editable
 - reporting-reference rows are read-only in Target Programme and display the relevant **reporting** date from the mapped Reporting Programme item

@@ -8,12 +8,13 @@ import {
   projectReportingProgrammeRows,
   projectTargetProgrammeStageWorkspace,
   shouldInitializeImplementedTarget,
+  validateTargetPlanningDetailPatch,
   type ProjectProgrammeClientState,
 } from "@/services/targetProgrammeService";
 
 const date = (value: string) => new Date(`${value}T00:00:00`);
-const definition = (guid: string, area: "target" | "reporting", rowType: string, itemCode = guid, sortOrder = 1) => ({
-  id: guid, guid, item_code: itemCode, programme_area: area, stage_code: area === "target" ? "ddtc" : "planning",
+const definition = (guid: string, area: "target" | "reporting", rowType: string, itemCode = guid, sortOrder = 1, stageCode = area === "target" ? "ddtc" : "planning") => ({
+  id: guid, guid, item_code: itemCode, programme_area: area, stage_code: stageCode,
   row_label: itemCode === guid ? `Label ${guid}` : itemCode, row_type: rowType, sort_order: sortOrder,
   level_code: "O", is_active: true, is_editable: true, is_derived: false,
   effective_from: date("2026-01-01"), effective_to: undefined,
@@ -34,11 +35,25 @@ const state = (overrides: Partial<ProjectProgrammeClientState>): ProjectProgramm
 } as ProjectProgrammeClientState);
 
 describe("project programme working-copy projections", () => {
-  it("only projects the implemented DDTC stage", () => {
+  it("projects both implemented Planning and DDTC stages", () => {
     expect(isImplementedTargetStage("ddtc")).toBe(true);
-    expect(isImplementedTargetStage("planning")).toBe(false);
+    expect(isImplementedTargetStage("planning")).toBe(true);
     expect(isImplementedTargetStage("land-activation")).toBe(false);
     expect(projectTargetProgrammeStageWorkspace(state({ stageStatuses: [] }), "Planning", "planning").stageStatus).toBeUndefined();
+  });
+
+  it("keeps Planning and DDTC attributes available when programme rows are empty", () => {
+    const planningStatus = { ...status, stage_code: "planning" };
+    const planningDetail = { id: "planning-detail", guid: "planning-detail", project_guid: "project", advancing_gateway4_code: "Yes", planning_granted_code: "No", partial_advance_g4_name: "Gateway", partial_advance_g4_homes: 10, created_at: date("2026-01-01"), created_by_user_id: "u", created_by_user_email: "u@test", updated_at: date("2026-01-01"), updated_by_user_id: "u", updated_by_user_email: "u@test" };
+    const planning = projectTargetProgrammeStageWorkspace(state({ definitions: [], records: [], stageStatuses: [planningStatus] as never[], planningDetail: planningDetail as never }), "Planning", "planning");
+    const ddtcDetail = { id: "ddtc-detail", guid: "ddtc-detail", project_guid: "project", planning_status_code: "Granted", created_at: date("2026-01-01"), created_by_user_id: "u", created_by_user_email: "u@test", updated_at: date("2026-01-01"), updated_by_user_id: "u", updated_by_user_email: "u@test" };
+    const ddtc = projectTargetProgrammeStageWorkspace(state({ definitions: [], records: [], ddtcDetail: ddtcDetail as never }), "Detailed Design / Tender / Contract", "ddtc");
+    expect(planning.rows).toHaveLength(0);
+    expect(planning.stageStatus).toBe(planningStatus);
+    expect(planning.planningDetail).toBe(planningDetail);
+    expect(ddtc.rows).toHaveLength(0);
+    expect(ddtc.stageStatus).toBe(status);
+    expect(ddtc.ddtcDetail).toBe(ddtcDetail);
   });
 
   it("initializes only active projects and tolerates missing historical DDTC metadata", () => {
@@ -67,13 +82,71 @@ describe("project programme working-copy projections", () => {
     expect(historicalFuture.rows[0]).toMatchObject({ isStartEditable: false, isEndEditable: false, isMoveEditable: false });
   });
 
-  it("initializes operational records only for active DDTC definitions", () => {
+  it("projects active Planning definitions using the shared workspace", () => {
+    const planningActivity = definition("planning-activity", "target", "activity", "planning-activity", 2, "planning");
+    const planningMilestone = definition("planning-milestone", "target", "milestone", "planning-milestone", 1, "planning");
+    const ddtcActivity = definition("ddtc-activity", "target", "activity");
+    const view = projectTargetProgrammeStageWorkspace(state({ definitions: [planningActivity, planningMilestone, ddtcActivity] as never[], records: [record("planning-activity", { targetStart: "2026-06-01", targetEnd: "2026-06-30" }), record("planning-milestone", { targetEnd: "2026-07-01" }), record("ddtc-activity", { targetEnd: "2026-08-01" })] as never[] }), "Planning", "planning");
+    expect(view.rows.map((row) => row.itemCode)).toEqual(["planning-milestone", "planning-activity"]);
+  });
+
+  it("validates Planning detail options and optional homes", () => {
+    for (const value of ["", "Yes", "No", "Yes (Partial)"]) expect(() => validateTargetPlanningDetailPatch({ advancingGateway4Code: value })).not.toThrow();
+    for (const value of ["", "Yes", "No"]) expect(() => validateTargetPlanningDetailPatch({ planningGrantedCode: value })).not.toThrow();
+    expect(() => validateTargetPlanningDetailPatch({ advancingGateway4Code: "Maybe" })).toThrow();
+    expect(() => validateTargetPlanningDetailPatch({ planningGrantedCode: "Pending" })).toThrow();
+    expect(() => validateTargetPlanningDetailPatch({ partialAdvanceG4Homes: 0 })).not.toThrow();
+    expect(() => validateTargetPlanningDetailPatch({ partialAdvanceG4Homes: null })).not.toThrow();
+    expect(() => validateTargetPlanningDetailPatch({ partialAdvanceG4Homes: -1 })).toThrow();
+    expect(() => validateTargetPlanningDetailPatch({ partialAdvanceG4Homes: 1.5 })).toThrow();
+  });
+
+  it("initializes operational records only for active Planning and DDTC definitions", () => {
     expect(isImplementedTargetOperationalDefinition({ programme_area: "target", stage_code: "ddtc", row_type: "activity" })).toBe(true);
     expect(isImplementedTargetOperationalDefinition({ programme_area: "target", stage_code: "ddtc", row_type: "milestone" })).toBe(true);
-    expect(isImplementedTargetOperationalDefinition({ programme_area: "target", stage_code: "planning", row_type: "activity" })).toBe(false);
+    expect(isImplementedTargetOperationalDefinition({ programme_area: "target", stage_code: "planning", row_type: "activity" })).toBe(true);
     expect(isImplementedTargetOperationalDefinition({ programme_area: "target", stage_code: "construction", row_type: "milestone" })).toBe(false);
     expect(isImplementedTargetOperationalDefinition({ programme_area: "target", stage_code: "ddtc", row_type: "summary" })).toBe(false);
   });
+  it("projects Planning current, future, previous, and historical editability", () => {
+    const activity = definition("planning-activity", "target", "activity", "planning-activity", 1, "planning");
+    const programme = state({ definitions: [activity] as never[], records: [record("planning-activity", { targetStart: "2026-06-01", targetEnd: "2026-06-30" })] as never[] });
+    const current = projectTargetProgrammeStageWorkspace(programme, "Planning", "planning", { projectIsEditable: true });
+    const future = projectTargetProgrammeStageWorkspace(programme, "Site Pipeline", "planning", { projectIsEditable: true });
+    const previous = projectTargetProgrammeStageWorkspace(programme, "Detailed Design / Tender / Contract", "planning", { projectIsEditable: true });
+    const historical = projectTargetProgrammeStageWorkspace(programme, "Planning", "planning", { projectIsEditable: false });
+    expect(current.rows[0]).toMatchObject({ isStartEditable: true, isEndEditable: true, isMoveEditable: true });
+    expect(future.rows[0]).toMatchObject({ isStartEditable: true, isEndEditable: true, isMoveEditable: true });
+    expect(previous.rows[0]).toMatchObject({ isStartEditable: false, isEndEditable: false, isMoveEditable: false });
+    expect(historical.rows[0]).toMatchObject({ isStartEditable: false, isEndEditable: false, isMoveEditable: false });
+  });
+
+  it("updates Planning summary dates immediately from local state", () => {
+    const child = definition("planning-child", "target", "activity", "planning-child", 1, "planning");
+    const summary = definition("planning-summary", "target", "summary", "planning-summary", 2, "planning");
+    const programme = state({ definitions: [child, summary] as never[], records: [record("planning-child", { targetEnd: "2026-06-30" })] as never[], summaryMembers: [{ guid: "member", summary_item_definition_guid: "planning-summary", child_item_definition_guid: "planning-child", sort_order: 1, is_active: true }] as never[] });
+    const patched = { ...programme, records: [record("planning-child", { targetEnd: "2026-07-31" })] } as ProjectProgrammeClientState;
+    const view = projectTargetProgrammeStageWorkspace(patched, "Planning", "planning", { projectIsEditable: true });
+    expect(view.rows.find((row) => row.definitionGuid === "planning-summary")?.endDate).toBe("2026-07-31");
+  });
+
+  it("projects Planning dependency-effective dates and locks the controlled field", () => {
+    const predecessor = definition("planning-predecessor", "target", "activity", "planning-predecessor", 1, "planning");
+    const successor = definition("planning-successor", "target", "activity", "planning-successor", 2, "planning");
+    const programme = state({ definitions: [predecessor, successor] as never[], records: [record("planning-predecessor", { targetEnd: "2026-06-30" }), record("planning-successor", { targetEnd: "2026-07-05" })] as never[], dependencies: [{ guid: "planning-dependency", predecessor_item_definition_guid: "planning-predecessor", successor_item_definition_guid: "planning-successor", dependency_type: "FS", lag_days: 0, successor_field: "target_end", is_active: true, effective_from: date("2026-01-01"), effective_to: undefined }] as never[] });
+    const view = projectTargetProgrammeStageWorkspace(programme, "Planning", "planning", { projectIsEditable: true });
+    expect(view.rows.find((row) => row.definitionGuid === "planning-successor")).toMatchObject({ endDate: "2026-06-30", isEndEditable: false });
+  });
+
+  it("projects Planning Reporting references from explicit mappings", () => {
+    const reporting = definition("planning-reporting", "reporting", "activity", "planning-reporting");
+    const target = definition("planning-target", "target", "activity", "planning-target", 1, "planning");
+    const reference = definition("planning-reference", "target", "reporting_reference", "planning-reference", 2, "planning");
+    const programme = state({ definitions: [reporting, target, reference] as never[], records: [record("planning-reporting", { reportingEnd: "2026-06-30" })] as never[], reportingMappings: [{ guid: "planning-mapping", reporting_item_definition_guid: "planning-reporting", reporting_field: "reporting_end", target_item_definition_guid: "planning-target", target_field: "target_end", reporting_reference_item_definition_guid: "planning-reference", is_active: true, effective_from: date("2026-01-01"), effective_to: undefined }] as never[] });
+    const view = projectTargetProgrammeStageWorkspace(programme, "Planning", "planning", { projectIsEditable: true });
+    expect(view.rows.find((row) => row.definitionGuid === "planning-reference")).toMatchObject({ endDate: "2026-06-30", isEndEditable: false });
+  });
+
   it("updates summary dates immediately from a local activity end patch", () => {
     const activity = definition("activity", "target", "activity");
     const summary = definition("summary", "target", "summary", "summary", 2);

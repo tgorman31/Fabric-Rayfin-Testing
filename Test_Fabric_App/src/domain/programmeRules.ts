@@ -327,7 +327,7 @@ export function deriveTargetSummaryDates(
           : undefined
         : recordsByDefinition.get(childDefinition.guid);
       const childStart = childDefinition.rowType === "milestone"
-        ? undefined
+        ? childDates?.targetEnd
         : childDates?.targetStart;
       if (childStart && (!targetStart || childStart < targetStart)) {
         targetStart = childStart;
