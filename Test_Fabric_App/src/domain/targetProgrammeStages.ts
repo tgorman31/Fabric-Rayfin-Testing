@@ -51,6 +51,10 @@ export function resolveTargetStageCode(
   ];
 }
 
+export function isTargetStageEditable(stage: TargetStageState, projectIsActive: boolean): boolean {
+  return projectIsActive && stage.isEditable;
+}
+
 export function buildTargetStageStates(
   reportingStage: string,
 ): TargetStageState[] {

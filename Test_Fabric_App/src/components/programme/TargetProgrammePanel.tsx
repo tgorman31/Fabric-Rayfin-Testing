@@ -9,20 +9,21 @@ import {
 
 import {
   buildTargetStageStates,
+  isTargetStageEditable,
   resolveTargetStageCode,
   TARGET_PROGRAMME_STAGES,
   type TargetStageCode,
   type TargetStageState,
 } from "@/domain/targetProgrammeStages";
 
-function positionLabel(stage: TargetStageState): string {
+function positionLabel(stage: TargetStageState, projectIsActive: boolean): string {
   switch (stage.position) {
     case "previous":
       return "Read-only";
     case "current":
-      return "Current · Editable";
+      return `Current · ${isTargetStageEditable(stage, projectIsActive) ? "Editable" : "Read-only"}`;
     case "future":
-      return "Forward planning · Editable";
+      return `Forward planning · ${isTargetStageEditable(stage, projectIsActive) ? "Editable" : "Read-only"}`;
     default:
       return "Read-only · Unmapped";
   }
@@ -89,7 +90,7 @@ export function TargetProgrammePanel({ projectGuid, reportingStage, projectIsAct
           >
             <span className="block text-sm font-semibold">{stage.label}</span>
             <span className="mt-2 block text-xs font-medium uppercase tracking-[0.12em] opacity-75">
-              {positionLabel(stage)}
+              {positionLabel(stage, projectIsActive)}
             </span>
           </button>
         ))}
@@ -100,6 +101,7 @@ export function TargetProgrammePanel({ projectGuid, reportingStage, projectIsAct
           key={`${projectGuid}-${reportingStage}-${selectedStage.code}`}
           workspace={selectedWorkspace!}
           stage={selectedStage}
+          projectIsActive={projectIsActive}
           saveState={saveState}
           error={error}
           onDatePatch={onDatePatch}
@@ -114,7 +116,7 @@ export function TargetProgrammePanel({ projectGuid, reportingStage, projectIsAct
             <h4 className="mt-2 text-lg font-semibold text-slate-950">{selectedStage.label}</h4>
           </div>
           <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${selectedStage.isEditable ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"}`}>
-            {selectedStage.isEditable ? "Editable" : "Read-only"}
+            {isTargetStageEditable(selectedStage, projectIsActive) ? "Editable" : "Read-only"}
           </span>
         </div>
         <p className="mt-4 text-sm leading-6 text-slate-500">

@@ -6,7 +6,7 @@ import { ProgrammeZoomControls } from "@/components/programme/ProgrammeZoomContr
 import { useProgrammeTimeline } from "@/hooks/useProgrammeTimeline";
 import { buildTimelineRange, getTimelinePlacement, type ProgrammeTimelineItem } from "@/utils/programmeTimeline";
 import { buildTargetDatePatch, type TargetProgrammeStageRow } from "@/domain/targetProgramme";
-import type { TargetStageState } from "@/domain/targetProgrammeStages";
+import { isTargetStageEditable, type TargetStageState } from "@/domain/targetProgrammeStages";
 import type { TargetProgrammeStageWorkspace } from "@/services/targetProgrammeService";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -37,6 +37,7 @@ function statusLabel(state: SaveState): string {
 export function TargetProgrammeStageWorkspace({
   workspace,
   stage,
+  projectIsActive,
   saveState,
   error,
   onDatePatch,
@@ -45,6 +46,7 @@ export function TargetProgrammeStageWorkspace({
 }: {
   workspace: TargetProgrammeStageWorkspace;
   stage: TargetStageState;
+  projectIsActive: boolean;
   saveState: SaveState;
   error: string | null;
   onDatePatch: (definitionGuid: string, patch: { target_start?: string; target_end?: string }) => void;
@@ -71,7 +73,7 @@ export function TargetProgrammeStageWorkspace({
     return <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-8 text-sm text-slate-600">No active DDTC programme definitions are configured.</div>;
   }
 
-  const stageEditable = stage.isEditable;
+  const stageEditable = isTargetStageEditable(stage, projectIsActive);
   const leftGrid = "minmax(250px, 1fr) 150px 150px";
   return (
     <section className="mt-6 rounded-4xl border border-slate-200 bg-white p-5 shadow-sm">

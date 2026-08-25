@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildTargetStageStates,
+  isTargetStageEditable,
   resolveTargetStageCode,
   TARGET_PROGRAMME_STAGES,
 } from "@/domain/targetProgrammeStages";
@@ -74,6 +75,18 @@ describe("Target Programme stage configuration", () => {
       expect.objectContaining({ code: "ddtc", position: "future", isEditable: true }),
       expect.objectContaining({ code: "construction", position: "future", isEditable: true }),
     ]);
+  });
+
+  it("combines stage position with project activity for editability", () => {
+    const current = buildTargetStageStates("Detailed Design / Tender / Contract").find((stage) => stage.code === "ddtc")!;
+    const future = buildTargetStageStates("Planning").find((stage) => stage.code === "ddtc")!;
+    const previous = buildTargetStageStates("Construction").find((stage) => stage.code === "ddtc")!;
+
+    expect(isTargetStageEditable(current, true)).toBe(true);
+    expect(isTargetStageEditable(future, true)).toBe(true);
+    expect(isTargetStageEditable(current, false)).toBe(false);
+    expect(isTargetStageEditable(future, false)).toBe(false);
+    expect(isTargetStageEditable(previous, true)).toBe(false);
   });
 
   it("makes blank and unknown Reporting Stages unmapped and read-only", () => {
