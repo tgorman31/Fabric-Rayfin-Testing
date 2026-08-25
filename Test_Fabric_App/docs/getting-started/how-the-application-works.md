@@ -10,7 +10,7 @@ The wider specification includes Tenure and Board Report work. In the current UI
 
 ## Project Register versus Project Index
 
-- **Project Register** is restricted and handles project identity operations: create, planning splits, contract splits and history.
+- **Project Register** launcher and route access are currently role-gated through `app_user_role`. It handles project identity operations: create, planning splits, contract splits and history. The current write service/data-layer authorisation boundary has a documented production-hardening limitation; see the [Security Overview](../security/security-overview.md).
 - **Project Index** is the broader workspace. It starts with a project list, opens a selected project by GUID, and currently includes Project Information, Reporting Programme and an implemented Target Programme/DDTC slice.
 - **Programme Admin** is a separate global route, not a project tab. It is visible to users with the current admin role check.
 

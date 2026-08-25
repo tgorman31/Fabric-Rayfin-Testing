@@ -1,11 +1,11 @@
 # Fabric Rayfin Project Index
 
-This repository contains one Fabric Rayfin application. It combines a restricted **Project Register** for creating, splitting and reviewing project lineage with a broader **Project Index** for project information and programme management. It is a lightweight project/programme-management application and is actively evolving; parts of the wider specification are still under development.
+This repository contains one Fabric Rayfin application. It combines a **Project Register** whose launcher and route access are currently role-gated through `app_user_role` with a broader **Project Index** for project information and programme management. The current Project Register write service/data-layer boundary has a documented production-hardening limitation; see the [Security Overview](docs/security/security-overview.md). It is a lightweight project/programme-management application and is actively evolving; parts of the wider specification are still under development.
 
 ## Current application areas
 
 - **Project Index** — authenticated users can search projects, open a project workspace, edit project information, maintain Reporting Programme dates, and work with the implemented Target Programme slice.
-- **Project Register** — authorised users can create projects, split planning or contract references, and view project history.
+- **Project Register** — launcher and route access are role-gated through `app_user_role`; users who pass that application flow can create projects, split planning or contract references, and view project history. The current write service/data-layer authorisation boundary has a documented production-hardening limitation; see the [Security Overview](docs/security/security-overview.md).
 - **Programme Admin** — authorised administrators can maintain programme definitions, summary memberships, dependencies and Reporting-to-Target mappings.
 - **Future or partial areas** — Tenure and Board Report are represented in the planned shape, but the current UI does not implement the full specification for them.
 

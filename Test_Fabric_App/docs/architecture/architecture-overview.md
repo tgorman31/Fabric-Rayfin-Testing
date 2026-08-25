@@ -9,7 +9,7 @@ This document describes the architecture evidenced by the current repository. It
 There is one Fabric Rayfin application with multiple React routes:
 
 - `/project-index` — authenticated Project Index list/workspace
-- `/project-register` — authenticated, role-gated Project Register
+- `/project-register` — authenticated Project Register; launcher and route access are role-gated through `app_user_role`, while the current write service/data-layer authorisation boundary has a documented production-hardening limitation (see the [security overview](../security/security-overview.md))
 - `/admin` — authenticated, Programme Admin role-gated configuration
 - `/apps` — authenticated launcher
 - `/auth` — authentication page
@@ -102,7 +102,7 @@ The implementation plan’s longer-term direction is stronger group-based access
 
 ## External and client-side dependencies
 
-The browser application depends materially on React, React Router, Rayfin packages, Vite, Leaflet/react-leaflet and Tailwind. The Project Index map uses Leaflet tile imagery through the map component; the exact production tile service, terms and network controls are **To verify**. The browser also stores Rayfin authentication state through the configured client storage option.
+The browser application depends materially on React, React Router, Rayfin packages, Vite, Leaflet/react-leaflet and Tailwind. **Current implementation:** the Project Index map uses Leaflet/react-leaflet with the hardcoded OpenStreetMap standard tile endpoint `https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png`. **To verify for production:** organisational approval of that external service, tile usage policy/terms, privacy implications, CSP/network allow-list, outbound network restrictions, rate limits/failure behaviour, and whether production should continue using that endpoint. The browser also stores Rayfin authentication state through the configured client storage option.
 
 ## Current boundaries versus future scope
 

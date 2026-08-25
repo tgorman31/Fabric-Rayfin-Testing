@@ -36,7 +36,7 @@ Services in `src/services/` call the Rayfin client and translate records for pag
 
 ## Where are Rayfin entities?
 
-Typed entity definitions are in `rayfin/data/`. `rayfin/data/schema.ts` lists the app schema. Identity is represented by `master_site_register` and `master_project_register`; programme configuration includes `programme_item_definition`, `programme_summary_member`, `programme_dependency_definition` and `programme_reporting_mapping`; project data includes `project_index_summary`, `project_programme`, `project_reporting_programme_item`, `project_team_member`, `project_target_stage_status` and `project_target_ddtc_detail`.
+Typed entity definitions are in `rayfin/data/`. `rayfin/data/schema.ts` lists the app schema. Identity is represented by `master_site_register` and `master_project_register`; programme configuration includes `programme_item_definition`, `programme_summary_member`, `programme_dependency_definition` and `programme_reporting_mapping`; project data includes `project_index_summary`, `project_programme`, `project_team_member`, `project_target_stage_status` and `project_target_ddtc_detail`. `project_programme` is the canonical project programme date entity for current Reporting and Target Programme work. `project_reporting_programme_item` remains in the schema as legacy/compatibility data and should not be used for new Reporting Programme implementation.
 
 ## Where are tests?
 
@@ -67,7 +67,7 @@ Programme definitions, summary memberships, dependencies and mappings are intent
 | Rayfin entity/table shape | `rayfin/data/` and `rayfin/data/schema.ts` | Schema/entity work; outside this documentation change |
 | Centrally maintained programme definitions | `/admin` via `src/pages/AdminPage.tsx` | Programme Admin metadata; do not hard-code it |
 | Programme dependencies or Reporting mappings | `/admin` via Programme Admin | Programme Admin metadata; validation remains in source code |
-| Project Register create/split/history behaviour | `src/pages/HomePage.tsx` and related services | Source code |
+| Project Register create/split/history behaviour | `src/pages/HomePage.tsx` and related services | Source code; launcher/route access is role-gated, but the current write service/data-layer authorisation limitation is documented in the [Security Overview](../security/security-overview.md) |
 | Functional requirement or product decision | `SPEC.md` / `SPEC-QUESTIONNAIRE.md` through the agreed review process | Canonical documentation/decision process |
 
 ## Before changing anything

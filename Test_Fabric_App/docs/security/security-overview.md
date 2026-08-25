@@ -26,9 +26,9 @@ This is an initial, evidence-based security review of the repository. It is not 
 
 ### Project Register
 
-**Implemented / Development control:** `src/App.tsx` uses `RegisterAccessGuard`; `projectIndexService.ts` and `src/domain/projectRegisterAccess.ts` check `app_user_role` for the current user. The launcher removes the Project Register card when access is absent, and a direct route request redirects to `/apps`.
+**Implemented / Development control:** `src/App.tsx` uses `RegisterAccessGuard`; `useProjectRegisterAccess.ts` calls `getProjectRegisterAccess()`, which checks `app_user_role` for the current user. The launcher removes the Project Register card when access is absent, and a direct route request redirects to `/apps`. This establishes launcher and normal route-flow access control.
 
-**Known limitation:** this is application-level role-table authorisation. The specification and implementation plan identify Entra group access as longer-term direction; it is not current evidence.
+**Known limitation:** `src/services/projectService.ts` authenticates the current user for `createProject()`, `splitForNewPlanningApplication()` and contract split operations, but does not independently assert the Project Register role before writing. `rayfin/data/master_project_register.ts` and `rayfin/data/master_site_register.ts` currently use `@authenticated("*")`. Therefore the repository does not establish role-restricted Project Register writes outside the guarded UI path. This documents an authorisation boundary requiring production hardening; it does not by itself claim a known exploitable production vulnerability. Entra group access is longer-term direction, not current evidence.
 
 ### Project Index
 
@@ -38,15 +38,15 @@ This is an initial, evidence-based security review of the repository. It is not 
 
 ### Programme Admin
 
-**Implemented / Development control:** `/admin` is protected by `ProgrammeAdminAccessGuard`; `programmeAdminService.ts` checks an effective `project_index_admin` role in `app_user_role` before normal Admin operations. Local development can use `VITE_PROGRAMME_ADMIN_BOOTSTRAP_EMAIL` and a signed-in matching user to bootstrap a role.
+**Implemented / Development control:** `/admin` is protected by `ProgrammeAdminAccessGuard`; `programmeAdminService.ts` independently checks an effective `project_index_admin` role in `app_user_role` before normal Admin operations. This is a service-level role assertion, unlike the current Project Register write service. Local development can use `VITE_PROGRAMME_ADMIN_BOOTSTRAP_EMAIL` and a signed-in matching user to bootstrap a role.
 
 **Known limitation:** the bootstrap is explicitly development-only, but operational production role provisioning and the platform enforcement boundary are not established here. The service contains a security TODO: programme configuration entities remain broadly authenticated at the Rayfin data-permission layer until a trusted claim/role-backed policy path is confirmed.
 
 ## UI visibility versus service/data authorisation
 
-Hiding a launcher card is not sufficient access control. The current code has route guards and service assertions for the Register/Admin paths, which is a **Development control**. However, the repository does not prove that every Rayfin entity operation is denied at the backend for every unauthorised caller.
+Hiding a launcher card is not sufficient access control. Project Register has launcher visibility and a guarded normal route flow, but its write functions do not independently assert the Register role. Programme Admin does have an independent service-level role assertion through `programmeAdminService.ts`. The current master project/site entities are broadly authenticated at the Rayfin entity layer, so the repository does not prove role-restricted Register writes for a signed-in caller who bypasses the guarded UI. This is a **Known limitation**, not a claim of a known exploitable production vulnerability.
 
-**To verify:** production Rayfin data policies, entity-level permissions, row-level restrictions, whether direct API calls are rejected, and the trusted identity claim used by any future `@role` policy.
+**To verify:** production Rayfin data policies, entity-level permissions, row-level restrictions, whether direct API calls are rejected, the trusted identity claim used by any future `@role` policy, and the final role enforcement boundary for Project Register writes.
 
 ## User and audit metadata
 
@@ -92,9 +92,9 @@ The dependency set is visible in `package.json` and locked by the repository’s
 
 ## External and network services
 
-**Implemented:** the app calls Rayfin through the configured client. The Project Index map uses Leaflet and a tile layer.
+**Implemented:** the app calls Rayfin through the configured client. The Project Index map uses Leaflet/react-leaflet with the hardcoded OpenStreetMap standard tile endpoint `https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png`.
 
-**To verify:** exact production tile host, TLS and CSP allow-list, provider terms/privacy, whether project-derived map coordinates are sent externally, outbound network restrictions, rate limits and failure handling.
+**To verify for production:** organisational approval of that external service, tile usage policy/terms, privacy implications, TLS and CSP/network allow-list, whether project-derived map coordinates are sent externally, outbound network restrictions, rate limits/failure behaviour, and whether production should continue using that endpoint.
 
 ## Logging, monitoring and operations
 
@@ -115,21 +115,24 @@ The repository contains save/error UI states and error handling, but that is not
 ## Known limitations and production-readiness gaps
 
 1. Programme configuration data permissions are acknowledged in code as broadly authenticated pending a trusted role-backed Rayfin policy.
-2. Project Index editing is intentionally broad for v1; a tab-level least-privilege model is not implemented.
-3. Entra group-based authorisation is planned, not evidenced as current.
-4. UI visibility and route/service checks do not by themselves prove backend/entity enforcement.
-5. Audit columns exist, but a complete immutable audit trail and review process are not evidenced.
-6. Monitoring, backup/recovery, incident response, security logging and operational ownership are not documented as established.
-7. Browser security headers, CSP, token/session hardening and map-provider controls are not evidenced.
-8. Tenure, full Construction delivery and Board Report are incomplete/future areas; their final data/access risks still require review.
+2. Project Register launcher/route access is role-gated through `app_user_role`, but Register write functions do not independently assert that role and the current master project/site entities are broadly authenticated at the Rayfin entity layer.
+3. Programme Admin has an independent service-level role assertion; Project Register currently does not have an equivalent write-service assertion.
+4. Project Index editing is intentionally broad for v1; a tab-level least-privilege model is not implemented.
+5. Entra group-based authorisation is planned, not evidenced as current.
+6. UI visibility and route/service checks do not by themselves prove backend/entity enforcement.
+7. Audit columns exist, but a complete immutable audit trail and review process are not evidenced.
+8. Monitoring, backup/recovery, incident response, security logging and operational ownership are not documented as established.
+9. Browser security headers, CSP, token/session hardening and map-provider controls are not evidenced.
+10. Tenure, full Construction delivery and Board Report are incomplete/future areas; their final data/access risks still require review.
 
 ## Security evidence map
 
 | Topic | Evidence | Status |
 |---|---|---|
 | Authentication and route gating | `src/main.tsx`, `src/App.tsx`, `src/hooks/AuthContext.tsx` | Implemented; platform details To verify |
-| Register access | `src/domain/projectRegisterAccess.ts`, `src/hooks/useProjectRegisterAccess.ts`, `src/services/projectIndexService.ts` | Development control |
-| Programme Admin access | `src/services/programmeAdminService.ts`, `src/domain/programmeAdminRules.ts` | Development control; limitation noted |
+| Register launcher/route access | `src/App.tsx`, `src/hooks/useProjectRegisterAccess.ts`, `src/domain/projectRegisterAccess.ts`, `getProjectRegisterAccess()` | Implemented / Development control; write-service and entity-layer limitation noted |
+| Register write authorisation | `src/services/projectService.ts`, `rayfin/data/master_project_register.ts`, `rayfin/data/master_site_register.ts` | Known limitation; no independent role assertion and broad authenticated entity policies |
+| Programme Admin access | `src/services/programmeAdminService.ts`, `src/domain/programmeAdminRules.ts` | Development control; independent service-level role assertion; platform limitation noted |
 | Development bootstrap | `src/domain/programmeAdminAuth.ts`, `programmeAdminService.ts`, `.gitignore` | Development control; not production provisioning |
 | Data/entity boundary | `src/services/rayfinClient.ts`, `rayfin/data/schema.ts` | Implemented client boundary; platform controls To verify |
 | Audit metadata | `rayfin/data/` entities and service field selections | Implemented fields; full audit process To verify |
@@ -145,14 +148,14 @@ Read the [architecture overview](../architecture/architecture-overview.md) for s
 ## Material items marked `To verify`
 
 - Production authentication configuration, MFA/conditional access, session policy and tenant boundaries.
-- Rayfin entity/data permissions, row-level restrictions, direct API rejection and trusted role claims.
+- Rayfin entity/data permissions, row-level restrictions, direct API rejection and trusted role claims, including the final enforcement boundary for Project Register writes.
 - Complete historical-project read-only enforcement.
 - Audit retention, tamper resistance, review, export and clock controls.
 - Encryption, storage region, retention, deletion, classification and platform administrative access.
 - CSP, security headers, HTTPS, token storage/session protection and response minimisation.
 - Production secret storage, rotation and scanning.
 - Dependency scanning, licence/provenance review and remediation process.
-- Map tile provider, privacy, CSP/network allow-list and external coordinate handling.
+- Organisational approval of the hardcoded OpenStreetMap tile endpoint, tile usage policy/terms, privacy, CSP/network allow-list, outbound restrictions, rate limits/failure behaviour and whether production should continue using that endpoint.
 - Central logging, monitoring, alerting, retention, incident response and ownership.
 - Backup, restore testing, disaster recovery and recovery objectives.
 - Security testing, penetration testing, patching and release gates.
