@@ -143,7 +143,7 @@ The repository contains save/error UI states and error handling, but that is not
 
 This document does not approve the application for production. Production acceptance requires organisational security and IT review, confirmation of platform controls, least-privilege data authorisation, secret and identity configuration, operational monitoring, backup/recovery, vulnerability management, data handling decisions and formal acceptance or remediation of every outstanding limitation.
 
-Read the [architecture overview](../architecture/architecture-overview.md) for system boundaries and [`IMPLEMENTATION-PLAN.md`](../../IMPLEMENTATION-PLAN.md) for planned engineering direction.
+Read the [architecture overview](../architecture/architecture-overview.md) for system boundaries, the [production-readiness register](production-readiness-register.md) for trackable open questions, and [`IMPLEMENTATION-PLAN.md`](../../IMPLEMENTATION-PLAN.md) for planned engineering direction.
 
 ## Material items marked `To verify`
 

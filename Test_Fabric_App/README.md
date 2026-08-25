@@ -30,6 +30,8 @@ Further reading:
 - [React and TypeScript for this project](docs/development/react-typescript-for-this-project.md)
 - [Architecture overview](docs/architecture/architecture-overview.md)
 - [Security overview](docs/security/security-overview.md)
+- [Support](SUPPORT.md)
+- [Operations documentation](docs/operations/configuration-reference.md)
 
 ## Local development
 
