@@ -8,12 +8,13 @@ import {
   projectReportingProgrammeRows,
   projectTargetProgrammeStageWorkspace,
   shouldInitializeImplementedTarget,
+  validateTargetPlanningDetailPatch,
   type ProjectProgrammeClientState,
 } from "@/services/targetProgrammeService";
 
 const date = (value: string) => new Date(`${value}T00:00:00`);
-const definition = (guid: string, area: "target" | "reporting", rowType: string, itemCode = guid, sortOrder = 1) => ({
-  id: guid, guid, item_code: itemCode, programme_area: area, stage_code: area === "target" ? "ddtc" : "planning",
+const definition = (guid: string, area: "target" | "reporting", rowType: string, itemCode = guid, sortOrder = 1, stageCode = area === "target" ? "ddtc" : "planning") => ({
+  id: guid, guid, item_code: itemCode, programme_area: area, stage_code: stageCode,
   row_label: itemCode === guid ? `Label ${guid}` : itemCode, row_type: rowType, sort_order: sortOrder,
   level_code: "O", is_active: true, is_editable: true, is_derived: false,
   effective_from: date("2026-01-01"), effective_to: undefined,
@@ -36,7 +37,7 @@ const state = (overrides: Partial<ProjectProgrammeClientState>): ProjectProgramm
 describe("project programme working-copy projections", () => {
   it("only projects the implemented DDTC stage", () => {
     expect(isImplementedTargetStage("ddtc")).toBe(true);
-    expect(isImplementedTargetStage("planning")).toBe(false);
+    expect(isImplementedTargetStage("planning")).toBe(true);
     expect(isImplementedTargetStage("land-activation")).toBe(false);
     expect(projectTargetProgrammeStageWorkspace(state({ stageStatuses: [] }), "Planning", "planning").stageStatus).toBeUndefined();
   });
@@ -67,10 +68,29 @@ describe("project programme working-copy projections", () => {
     expect(historicalFuture.rows[0]).toMatchObject({ isStartEditable: false, isEndEditable: false, isMoveEditable: false });
   });
 
-  it("initializes operational records only for active DDTC definitions", () => {
+  it("projects active Planning definitions using the shared workspace", () => {
+    const planningActivity = definition("planning-activity", "target", "activity", "planning-activity", 2, "planning");
+    const planningMilestone = definition("planning-milestone", "target", "milestone", "planning-milestone", 1, "planning");
+    const ddtcActivity = definition("ddtc-activity", "target", "activity");
+    const view = projectTargetProgrammeStageWorkspace(state({ definitions: [planningActivity, planningMilestone, ddtcActivity] as never[], records: [record("planning-activity", { targetStart: "2026-06-01", targetEnd: "2026-06-30" }), record("planning-milestone", { targetEnd: "2026-07-01" }), record("ddtc-activity", { targetEnd: "2026-08-01" })] as never[] }), "Planning", "planning");
+    expect(view.rows.map((row) => row.itemCode)).toEqual(["planning-milestone", "planning-activity"]);
+  });
+
+  it("validates Planning detail options and optional homes", () => {
+    for (const value of ["", "Yes", "No", "Yes (Partial)"]) expect(() => validateTargetPlanningDetailPatch({ advancingGateway4Code: value })).not.toThrow();
+    for (const value of ["", "Yes", "No"]) expect(() => validateTargetPlanningDetailPatch({ planningGrantedCode: value })).not.toThrow();
+    expect(() => validateTargetPlanningDetailPatch({ advancingGateway4Code: "Maybe" })).toThrow();
+    expect(() => validateTargetPlanningDetailPatch({ planningGrantedCode: "Pending" })).toThrow();
+    expect(() => validateTargetPlanningDetailPatch({ partialAdvanceG4Homes: 0 })).not.toThrow();
+    expect(() => validateTargetPlanningDetailPatch({ partialAdvanceG4Homes: null })).not.toThrow();
+    expect(() => validateTargetPlanningDetailPatch({ partialAdvanceG4Homes: -1 })).toThrow();
+    expect(() => validateTargetPlanningDetailPatch({ partialAdvanceG4Homes: 1.5 })).toThrow();
+  });
+
+  it("initializes operational records only for active Planning and DDTC definitions", () => {
     expect(isImplementedTargetOperationalDefinition({ programme_area: "target", stage_code: "ddtc", row_type: "activity" })).toBe(true);
     expect(isImplementedTargetOperationalDefinition({ programme_area: "target", stage_code: "ddtc", row_type: "milestone" })).toBe(true);
-    expect(isImplementedTargetOperationalDefinition({ programme_area: "target", stage_code: "planning", row_type: "activity" })).toBe(false);
+    expect(isImplementedTargetOperationalDefinition({ programme_area: "target", stage_code: "planning", row_type: "activity" })).toBe(true);
     expect(isImplementedTargetOperationalDefinition({ programme_area: "target", stage_code: "construction", row_type: "milestone" })).toBe(false);
     expect(isImplementedTargetOperationalDefinition({ programme_area: "target", stage_code: "ddtc", row_type: "summary" })).toBe(false);
   });

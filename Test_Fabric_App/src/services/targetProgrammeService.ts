@@ -1,6 +1,7 @@
 import type { master_project_register } from "../../rayfin/data/master_project_register";
 import type { project_index_summary } from "../../rayfin/data/project_index_summary";
 import type { project_target_ddtc_detail } from "../../rayfin/data/project_target_ddtc_detail";
+import type { project_target_planning_detail } from "../../rayfin/data/project_target_planning_detail";
 import type { project_target_stage_status } from "../../rayfin/data/project_target_stage_status";
 
 import {
@@ -67,6 +68,23 @@ export type TargetStageStatusRecord = Pick<
   | "updated_by_user_email"
 >;
 
+export type TargetPlanningDetailRecord = Pick<
+  project_target_planning_detail,
+  | "id"
+  | "guid"
+  | "project_guid"
+  | "advancing_gateway4_code"
+  | "planning_granted_code"
+  | "partial_advance_g4_name"
+  | "partial_advance_g4_homes"
+  | "created_at"
+  | "created_by_user_id"
+  | "created_by_user_email"
+  | "updated_at"
+  | "updated_by_user_id"
+  | "updated_by_user_email"
+>;
+
 export type TargetDdtcDetailRecord = Pick<
   project_target_ddtc_detail,
   | "id"
@@ -89,6 +107,7 @@ export type ProjectProgrammeClientState = {
   reportingMappings: ReportingMappingRecord[];
   stageStatuses: TargetStageStatusRecord[];
   ddtcDetail?: TargetDdtcDetailRecord;
+  planningDetail?: TargetPlanningDetailRecord;
 };
 
 export type TargetProgrammeStageWorkspace = {
@@ -96,6 +115,7 @@ export type TargetProgrammeStageWorkspace = {
   rows: TargetProgrammeStageRow[];
   stageStatus?: TargetStageStatusRecord;
   ddtcDetail?: TargetDdtcDetailRecord;
+  planningDetail?: TargetPlanningDetailRecord;
 };
 
 export type ReportingProgrammeProjection = ReturnType<typeof mapCanonicalReportingView>;
@@ -104,6 +124,11 @@ const STATUS_FIELDS = [
   "id", "guid", "project_guid", "stage_code", "rag_code", "rag_comment",
   "created_at", "created_by_user_id", "created_by_user_email", "updated_at",
   "updated_by_user_id", "updated_by_user_email",
+] as const;
+const PLANNING_DETAIL_FIELDS = [
+  "id", "guid", "project_guid", "advancing_gateway4_code", "planning_granted_code",
+  "partial_advance_g4_name", "partial_advance_g4_homes", "created_at", "created_by_user_id",
+  "created_by_user_email", "updated_at", "updated_by_user_id", "updated_by_user_email",
 ] as const;
 const DDTC_DETAIL_FIELDS = [
   "id", "guid", "project_guid", "planning_status_code", "created_at",
@@ -234,15 +259,15 @@ export function projectReportingProgrammeRows(
     .filter((row): row is ReportingProgrammeProjection => Boolean(row));
 }
 
-export function isImplementedTargetStage(stageCode: string): stageCode is "ddtc" {
-  return stageCode === "ddtc";
+export function isImplementedTargetStage(stageCode: string): stageCode is "planning" | "ddtc" {
+  return stageCode === "planning" || stageCode === "ddtc";
 }
 
 export function isImplementedTargetOperationalDefinition(
   definition: Pick<ProgrammeDefinitionRecord, "programme_area" | "stage_code" | "row_type">,
 ): boolean {
   return definition.programme_area === "target"
-    && definition.stage_code === "ddtc"
+    && (definition.stage_code === "planning" || definition.stage_code === "ddtc")
     && (definition.row_type === "activity" || definition.row_type === "milestone");
 }
 
@@ -321,6 +346,7 @@ export function projectTargetProgrammeStageWorkspace(
     rows: projectTargetProgrammeRows(projectionInputs),
     stageStatus,
     ddtcDetail: stageCode === "ddtc" ? state.ddtcDetail : undefined,
+    planningDetail: stageCode === "planning" ? state.planningDetail : undefined,
   };
 }
 
@@ -398,6 +424,69 @@ export async function getOrEnsureTargetDdtcDetail(projectGuid: string): Promise<
   });
 }
 
+async function getExistingTargetPlanningDetail(projectGuid: string): Promise<TargetPlanningDetailRecord | undefined> {
+  const existing = await getRayfinClient().data.project_target_planning_detail
+    .select(PLANNING_DETAIL_FIELDS)
+    .where({ project_guid: { eq: projectGuid } })
+    .first(-1)
+    .execute();
+  return selectSingleLogicalRecord(existing, `Planning detail for ${projectGuid}`) ?? undefined;
+}
+
+export async function getOrEnsureTargetPlanningDetail(projectGuid: string): Promise<TargetPlanningDetailRecord> {
+  const existing = await getExistingTargetPlanningDetail(projectGuid);
+  if (existing) return existing;
+  const client = getRayfinClient().data.project_target_planning_detail;
+  const user = getCurrentUser();
+  const now = new Date();
+  const id = crypto.randomUUID();
+  return client.create({
+    id, guid: id, project_guid: projectGuid,
+    created_at: now, created_by_user_id: user.id, created_by_user_email: user.email,
+    updated_at: now, updated_by_user_id: user.id, updated_by_user_email: user.email,
+  } as never);
+}
+
+export type TargetPlanningDetailPatch = {
+  advancingGateway4Code?: string;
+  planningGrantedCode?: string;
+  partialAdvanceG4Name?: string;
+  partialAdvanceG4Homes?: number | null;
+};
+
+export function validateTargetPlanningDetailPatch(patch: TargetPlanningDetailPatch): void {
+  if (patch.advancingGateway4Code !== undefined && !["", "Yes", "No", "Yes (Partial)"].includes(patch.advancingGateway4Code)) {
+    throw new Error("Advancing Gateway 4? must be blank, Yes, No, or Yes (Partial).");
+  }
+  if (patch.planningGrantedCode !== undefined && !["", "Yes", "No"].includes(patch.planningGrantedCode)) {
+    throw new Error("Planning Granted? must be blank, Yes, or No.");
+  }
+  if (patch.partialAdvanceG4Homes !== undefined && patch.partialAdvanceG4Homes !== null
+    && (!Number.isInteger(patch.partialAdvanceG4Homes) || patch.partialAdvanceG4Homes < 0)) {
+    throw new Error("Partial Advance G4: # Homes must be a non-negative whole number or blank.");
+  }
+}
+
+export async function updateTargetPlanningDetail(
+  projectGuid: string,
+  patch: TargetPlanningDetailPatch,
+): Promise<TargetPlanningDetailRecord> {
+  const context = await getPersistedProjectContext(projectGuid);
+  assertStageWriteable("planning", context.reportingStage);
+  validateTargetPlanningDetailPatch(patch);
+  if (Object.keys(patch).length === 0) throw new Error("At least one Planning detail field must be supplied.");
+  const current = await getOrEnsureTargetPlanningDetail(projectGuid);
+  const user = getCurrentUser();
+  const update: Record<string, unknown> = {
+    updated_at: new Date(), updated_by_user_id: user.id, updated_by_user_email: user.email,
+  };
+  if (Object.prototype.hasOwnProperty.call(patch, "advancingGateway4Code")) update.advancing_gateway4_code = patch.advancingGateway4Code || null;
+  if (Object.prototype.hasOwnProperty.call(patch, "planningGrantedCode")) update.planning_granted_code = patch.planningGrantedCode || null;
+  if (Object.prototype.hasOwnProperty.call(patch, "partialAdvanceG4Name")) update.partial_advance_g4_name = patch.partialAdvanceG4Name || null;
+  if (Object.prototype.hasOwnProperty.call(patch, "partialAdvanceG4Homes")) update.partial_advance_g4_homes = patch.partialAdvanceG4Homes ?? null;
+  return getRayfinClient().data.project_target_planning_detail.update({ id: current.id }, update as never);
+}
+
 export async function updateTargetDdtcDetail(
   projectGuid: string,
   planningStatusCode: string,
@@ -428,18 +517,17 @@ export async function loadProjectProgrammeClientState(
       ensureProjectProgrammeRecord(projectGuid, definition.guid),
     ));
   }
-  const [records, summaryMembers, dependencies, reportingMappings, ddtcDetail] = await Promise.all([
+  const [records, summaryMembers, dependencies, reportingMappings, ddtcDetail, planningDetail] = await Promise.all([
     listProjectProgrammeRecords(projectGuid),
     listActiveSummaryMembers(),
     listActiveDependencyDefinitions(),
     listActiveReportingMappings(),
-    initializeImplementedTarget
-      ? getOrEnsureTargetDdtcDetail(projectGuid)
-      : getExistingTargetDdtcDetail(projectGuid),
+    initializeImplementedTarget ? getOrEnsureTargetDdtcDetail(projectGuid) : getExistingTargetDdtcDetail(projectGuid),
+    initializeImplementedTarget ? getOrEnsureTargetPlanningDetail(projectGuid) : getExistingTargetPlanningDetail(projectGuid),
   ]);
-  const ddtcStatus = initializeImplementedTarget
-    ? await ensureStageStatus(projectGuid, "ddtc")
-    : undefined;
+  const [ddtcStatus, planningStatus] = initializeImplementedTarget
+    ? await Promise.all([ensureStageStatus(projectGuid, "ddtc"), ensureStageStatus(projectGuid, "planning")])
+    : [undefined, undefined];
   const stageStatuses = await listTargetStageStatuses(projectGuid);
   return {
     definitions,
@@ -447,10 +535,10 @@ export async function loadProjectProgrammeClientState(
     summaryMembers,
     dependencies,
     reportingMappings,
-    stageStatuses: ddtcStatus && !stageStatuses.some((status) => status.guid === ddtcStatus.guid)
-      ? [...stageStatuses, ddtcStatus]
-      : stageStatuses,
+    stageStatuses: [ddtcStatus, planningStatus].filter((status): status is TargetStageStatusRecord => Boolean(status))
+      .reduce((statuses, status) => statuses.some((existing) => existing.guid === status.guid) ? statuses : [...statuses, status], stageStatuses),
     ddtcDetail,
+    planningDetail,
   };
 }
 

@@ -40,9 +40,11 @@ import {
   projectReportingProgrammeRows,
   projectTargetProgrammeStageWorkspace,
   updateTargetDdtcDetail,
+  updateTargetPlanningDetail,
   updateTargetProgrammeDates,
   updateTargetStageStatus,
   type ProjectProgrammeClientState,
+  type TargetPlanningDetailPatch,
 } from "@/services/targetProgrammeService";
 
 type MajorTab =
@@ -1023,10 +1025,10 @@ export function ProjectIndexPage() {
     });
   }
 
-  function handleTargetDatePatch(definitionGuid: string, patch: { target_start?: string; target_end?: string }) {
+  function handleTargetDatePatch(stageCode: string, definitionGuid: string, patch: { target_start?: string; target_end?: string }) {
     if (!workspace) return;
     const projectGuid = workspace.summary.projectGuid;
-    const row = projectTargetProgrammeStageWorkspace(workspace.programme, workspace.summary.reportingStage, "ddtc").rows.find((candidate) => candidate.definitionGuid === definitionGuid);
+    const row = projectTargetProgrammeStageWorkspace(workspace.programme, workspace.summary.reportingStage, stageCode).rows.find((candidate) => candidate.definitionGuid === definitionGuid);
     const record = workspace.programme.records.find((candidate) => candidate.programme_item_definition_guid === definitionGuid);
     if (!row || !record) return;
     if (Object.prototype.hasOwnProperty.call(patch, "target_start") && !row.isStartEditable) { setError("Target Start is read-only."); setSaveState("error"); return; }
@@ -1045,7 +1047,7 @@ export function ProjectIndexPage() {
       } : candidate),
     }));
     setSaveState("saving");
-    void programmeWriteQueue.current.enqueue(key, () => updateTargetProgrammeDates(projectGuid, "ddtc", definitionGuid, patch)).then(() => {
+    void programmeWriteQueue.current.enqueue(key, () => updateTargetProgrammeDates(projectGuid, stageCode, definitionGuid, patch)).then(() => {
       if (isCurrentProgrammeWrite(projectGuid, key, revision)) {
         setError(null);
         setSaveState("saved");
@@ -1058,16 +1060,16 @@ export function ProjectIndexPage() {
     });
   }
 
-  function handleTargetStatusPatch(patch: { ragCode?: string; ragComment?: string }) {
+  function handleTargetStatusPatch(stageCode: string, patch: { ragCode?: string; ragComment?: string }) {
     if (!workspace) return;
     const projectGuid = workspace.summary.projectGuid;
-    const status = workspace.programme.stageStatuses.find((candidate) => candidate.stage_code === "ddtc");
+    const status = workspace.programme.stageStatuses.find((candidate) => candidate.stage_code === stageCode);
     if (!status) return;
-    const key = programmeWriteKey(projectGuid, "target_stage_status:ddtc");
+    const key = programmeWriteKey(projectGuid, `target_stage_status:${stageCode}`);
     const revision = nextProgrammeRevision(key);
     patchProgrammeState((programme) => ({ ...programme, stageStatuses: programme.stageStatuses.map((candidate) => candidate.guid === status.guid ? { ...candidate, ...(Object.prototype.hasOwnProperty.call(patch, "ragCode") ? { rag_code: patch.ragCode || undefined } : {}), ...(Object.prototype.hasOwnProperty.call(patch, "ragComment") ? { rag_comment: patch.ragComment || undefined } : {}) } : candidate) }));
     setSaveState("saving");
-    void programmeWriteQueue.current.enqueue(key, () => updateTargetStageStatus(projectGuid, "ddtc", patch)).then(() => {
+    void programmeWriteQueue.current.enqueue(key, () => updateTargetStageStatus(projectGuid, stageCode, patch)).then(() => {
       if (isCurrentProgrammeWrite(projectGuid, key, revision)) {
         setError(null);
         setSaveState("saved");
@@ -1075,7 +1077,36 @@ export function ProjectIndexPage() {
     }).catch((err) => {
       if (!isCurrentProgrammeWrite(projectGuid, key, revision)) return;
       setSaveState("error");
-      setError(err instanceof Error ? err.message : "Unable to save DDTC status.");
+      setError(err instanceof Error ? err.message : `Unable to save ${stageCode} status.`);
+      scheduleProgrammeReconciliation(projectGuid);
+    });
+  }
+
+  function handlePlanningDetail(patch: TargetPlanningDetailPatch) {
+    if (!workspace || !workspace.programme.planningDetail) return;
+    const projectGuid = workspace.summary.projectGuid;
+    const key = programmeWriteKey(projectGuid, "target_planning_detail");
+    const revision = nextProgrammeRevision(key);
+    patchProgrammeState((programme) => ({
+      ...programme,
+      planningDetail: programme.planningDetail ? {
+        ...programme.planningDetail,
+        ...(Object.prototype.hasOwnProperty.call(patch, "advancingGateway4Code") ? { advancing_gateway4_code: patch.advancingGateway4Code || undefined } : {}),
+        ...(Object.prototype.hasOwnProperty.call(patch, "planningGrantedCode") ? { planning_granted_code: patch.planningGrantedCode || undefined } : {}),
+        ...(Object.prototype.hasOwnProperty.call(patch, "partialAdvanceG4Name") ? { partial_advance_g4_name: patch.partialAdvanceG4Name || undefined } : {}),
+        ...(Object.prototype.hasOwnProperty.call(patch, "partialAdvanceG4Homes") ? { partial_advance_g4_homes: patch.partialAdvanceG4Homes ?? undefined } : {}),
+      } : programme.planningDetail,
+    }));
+    setSaveState("saving");
+    void programmeWriteQueue.current.enqueue(key, () => updateTargetPlanningDetail(projectGuid, patch)).then(() => {
+      if (isCurrentProgrammeWrite(projectGuid, key, revision)) {
+        setError(null);
+        setSaveState("saved");
+      }
+    }).catch((err) => {
+      if (!isCurrentProgrammeWrite(projectGuid, key, revision)) return;
+      setSaveState("error");
+      setError(err instanceof Error ? err.message : "Unable to save Planning detail.");
       scheduleProgrammeReconciliation(projectGuid);
     });
   }
@@ -2235,6 +2266,7 @@ export function ProjectIndexPage() {
                 onDatePatch={handleTargetDatePatch}
                 onStatusPatch={handleTargetStatusPatch}
                 onPlanningStatus={handlePlanningStatus}
+                onPlanningDetail={handlePlanningDetail}
               />
             ) : activeTab === "tenure" ? (
               <PlaceholderPanel title="Tenure" />

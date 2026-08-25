@@ -5,6 +5,7 @@ import {
   isImplementedTargetStage,
   projectTargetProgrammeStageWorkspace,
   type ProjectProgrammeClientState,
+  type TargetPlanningDetailPatch,
 } from "@/services/targetProgrammeService";
 
 import {
@@ -39,16 +40,17 @@ function positionClasses(stage: TargetStageState): string {
   return "border-slate-200 bg-white text-slate-700 hover:border-[#8fb73e] hover:bg-[#f7fbf8]";
 }
 
-export function TargetProgrammePanel({ projectGuid, reportingStage, projectIsActive, programme, saveState, error, onDatePatch, onStatusPatch, onPlanningStatus }: {
+export function TargetProgrammePanel({ projectGuid, reportingStage, projectIsActive, programme, saveState, error, onDatePatch, onStatusPatch, onPlanningStatus, onPlanningDetail }: {
   projectGuid: string;
   reportingStage: string;
   projectIsActive: boolean;
   programme: ProjectProgrammeClientState;
   saveState: "idle" | "saving" | "saved" | "error";
   error: string | null;
-  onDatePatch: (definitionGuid: string, patch: { target_start?: string; target_end?: string }) => void;
-  onStatusPatch: (patch: { ragCode?: string; ragComment?: string }) => void;
+  onDatePatch: (stageCode: string, definitionGuid: string, patch: { target_start?: string; target_end?: string }) => void;
+  onStatusPatch: (stageCode: string, patch: { ragCode?: string; ragComment?: string }) => void;
   onPlanningStatus: (value: string) => void;
+  onPlanningDetail: (patch: TargetPlanningDetailPatch) => void;
 }) {
   const stages = useMemo(
     () => buildTargetStageStates(reportingStage),
@@ -107,6 +109,7 @@ export function TargetProgrammePanel({ projectGuid, reportingStage, projectIsAct
           onDatePatch={onDatePatch}
           onStatusPatch={onStatusPatch}
           onPlanningStatus={onPlanningStatus}
+          onPlanningDetail={onPlanningDetail}
         />
       ) : null}
       {selectedStage.code !== "ddtc" ? <div className="mt-6 rounded-4xl border border-slate-200 bg-slate-50/70 p-6">
