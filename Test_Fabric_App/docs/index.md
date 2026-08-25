@@ -14,11 +14,11 @@ Read [How the application works](getting-started/how-the-application-works.md), 
 
 ### Developer new to this project
 
-Read [How the application works](getting-started/how-the-application-works.md), follow the [codebase tour](getting-started/codebase-tour.md), and keep the [React/TypeScript guide](development/react-typescript-for-this-project.md) open while reading source. Then review the [architecture overview](architecture/architecture-overview.md).
+Read [How the application works](getting-started/how-the-application-works.md), follow the [codebase tour](getting-started/codebase-tour.md), and keep the [React/TypeScript guide](development/react-typescript-for-this-project.md) open while reading source. Then review the [architecture overview](architecture/architecture-overview.md) and [Architecture Decision Records](decisions/README.md).
 
 ### IT or security reviewer
 
-Start with the [security overview](security/security-overview.md) and the [production-readiness register](security/production-readiness-register.md), then compare them with the [architecture overview](architecture/architecture-overview.md), [`SPEC.md`](../SPEC.md), and [`IMPLEMENTATION-PLAN.md`](../IMPLEMENTATION-PLAN.md). This is an initial evidence-based review, not a certification.
+Start with the [security overview](security/security-overview.md) and the [production-readiness register](security/production-readiness-register.md), then compare them with the [architecture overview](architecture/architecture-overview.md) and [Architecture Decision Records](decisions/README.md), [`SPEC.md`](../SPEC.md), and [`IMPLEMENTATION-PLAN.md`](../IMPLEMENTATION-PLAN.md). This is an initial evidence-based review, not a certification.
 
 ### Support or troubleshooting reader
 
@@ -54,3 +54,4 @@ A future Help/Documentation surface may render a curated subset of these Markdow
 - [Troubleshooting](operations/troubleshooting.md)
 - [Support and escalation](operations/support-and-escalation.md)
 - [Production-readiness register](security/production-readiness-register.md)
+- [Architecture Decision Records](decisions/README.md)
