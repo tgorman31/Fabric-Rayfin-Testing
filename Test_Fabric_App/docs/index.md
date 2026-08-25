@@ -18,11 +18,11 @@ Read [How the application works](getting-started/how-the-application-works.md), 
 
 ### IT or security reviewer
 
-Start with the [security overview](security/security-overview.md), then compare it with the [architecture overview](architecture/architecture-overview.md), [`SPEC.md`](../SPEC.md), and [`IMPLEMENTATION-PLAN.md`](../IMPLEMENTATION-PLAN.md). This is an initial evidence-based review, not a certification.
+Start with the [security overview](security/security-overview.md) and the [production-readiness register](security/production-readiness-register.md), then compare them with the [architecture overview](architecture/architecture-overview.md), [`SPEC.md`](../SPEC.md), and [`IMPLEMENTATION-PLAN.md`](../IMPLEMENTATION-PLAN.md). This is an initial evidence-based review, not a certification.
 
 ### Support or troubleshooting reader
 
-Start with [How the application works](getting-started/how-the-application-works.md), then use the [codebase tour](getting-started/codebase-tour.md) to locate routes, services, tests and configuration. Check the current `package.json` scripts in the [README](../README.md) for local commands.
+Start with [How the application works](getting-started/how-the-application-works.md), then use the [troubleshooting guide](operations/troubleshooting.md). The [configuration reference](operations/configuration-reference.md), [deployment and release guide](operations/deployment-and-release.md), and [support and escalation guide](operations/support-and-escalation.md) cover operational follow-up. Use the [codebase tour](getting-started/codebase-tour.md) for source locations and check the current `package.json` scripts in the [README](../README.md) for local commands.
 
 ## Source-of-truth hierarchy
 
@@ -49,3 +49,8 @@ A future Help/Documentation surface may render a curated subset of these Markdow
 - [How the application works](getting-started/how-the-application-works.md)
 - [Codebase tour](getting-started/codebase-tour.md)
 - [React and TypeScript for this project](development/react-typescript-for-this-project.md)
+- [Configuration reference](operations/configuration-reference.md)
+- [Deployment and release](operations/deployment-and-release.md)
+- [Troubleshooting](operations/troubleshooting.md)
+- [Support and escalation](operations/support-and-escalation.md)
+- [Production-readiness register](security/production-readiness-register.md)
