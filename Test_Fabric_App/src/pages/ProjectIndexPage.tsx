@@ -11,6 +11,8 @@ import {
 import type { LatLngBoundsLiteral } from "leaflet";
 
 import { useAuth } from "@/hooks/AuthContext";
+import { createKeyedWriteQueue } from "@/domain/keyedWriteQueue";
+import { buildReportingDatePatch, parseDateOnly } from "@/domain/reportingProgramme";
 import { ProgrammeTimelineHeader } from "@/components/programme/ProgrammeTimelineHeader";
 import { ProgrammeTimelineRow } from "@/components/programme/ProgrammeTimelineRow";
 import { ProgrammeZoomControls } from "@/components/programme/ProgrammeZoomControls";
@@ -31,8 +33,17 @@ import {
   type SaveState,
   updateProjectSummaryField,
   updateProjectTeamMember,
-  updateReportingProgrammeItem,
 } from "@/services/projectIndexService";
+import { updateProjectProgrammeDates } from "@/services/programmeService";
+import {
+  loadProjectProgrammeClientState,
+  projectReportingProgrammeRows,
+  projectTargetProgrammeStageWorkspace,
+  updateTargetDdtcDetail,
+  updateTargetProgrammeDates,
+  updateTargetStageStatus,
+  type ProjectProgrammeClientState,
+} from "@/services/targetProgrammeService";
 
 type MajorTab =
   | "project-information"
@@ -577,9 +588,68 @@ export function ProjectIndexPage() {
     getDefaultMapBounds(),
   );
   const workspaceRef = useRef<ProjectIndexWorkspace | null>(null);
+  const programmeWriteQueue = useRef(createKeyedWriteQueue());
+  const programmeRevisions = useRef(new Map<string, number>());
+  const reconciliationRef = useRef(new Map<string, Promise<void>>());
 
   const selectedProjectGuid = routeProjectGuid ?? null;
+  const selectedProjectGuidRef = useRef<string | null>(selectedProjectGuid);
+  selectedProjectGuidRef.current = selectedProjectGuid;
   const options = useMemo(() => getProjectIndexOptions(), []);
+
+  function programmeWriteKey(projectGuid: string, logicalKey: string): string {
+    return `project:${projectGuid}:${logicalKey}`;
+  }
+
+  function nextProgrammeRevision(key: string): number {
+    const revision = (programmeRevisions.current.get(key) ?? 0) + 1;
+    programmeRevisions.current.set(key, revision);
+    return revision;
+  }
+
+  function isCurrentProject(projectGuid: string): boolean {
+    return selectedProjectGuidRef.current === projectGuid
+      && workspaceRef.current?.summary.projectGuid === projectGuid;
+  }
+
+  function isCurrentProgrammeWrite(projectGuid: string, key: string, revision: number): boolean {
+    return isCurrentProject(projectGuid)
+      && programmeRevisions.current.get(key) === revision;
+  }
+
+  async function refreshProgramme(projectGuid: string): Promise<void> {
+    const programme = await loadProjectProgrammeClientState(projectGuid);
+    setWorkspace((current) => {
+      if (!isCurrentProject(projectGuid) || !current || current.summary.projectGuid !== projectGuid) return current;
+      return { ...current, programme, reportingProgramme: projectReportingProgrammeRows(programme) };
+    });
+  }
+
+  function scheduleProgrammeReconciliation(projectGuid: string): void {
+    if (reconciliationRef.current.has(projectGuid)) return;
+    const reconciliation = (async () => {
+      await programmeWriteQueue.current.whenIdle();
+      if (!isCurrentProject(projectGuid)) return;
+      await refreshProgramme(projectGuid);
+      if (isCurrentProject(projectGuid)) {
+        setError(null);
+        setSaveState("idle");
+      }
+    })();
+    reconciliationRef.current.set(projectGuid, reconciliation);
+    void reconciliation.then(
+      () => { if (reconciliationRef.current.get(projectGuid) === reconciliation) reconciliationRef.current.delete(projectGuid); },
+      () => { if (reconciliationRef.current.get(projectGuid) === reconciliation) reconciliationRef.current.delete(projectGuid); },
+    );
+  }
+
+  function patchProgrammeState(update: (programme: ProjectProgrammeClientState) => ProjectProgrammeClientState): void {
+    setWorkspace((current) => {
+      if (!current) return current;
+      const programme = update(current.programme);
+      return { ...current, programme, reportingProgramme: projectReportingProgrammeRows(programme) };
+    });
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -616,8 +686,11 @@ export function ProjectIndexPage() {
   }, [searchText, includeHistory]);
 
   useEffect(() => {
+    setSaveState("idle");
+    setError(null);
+    setValidation({});
+    setWorkspace(null);
     if (!selectedProjectGuid) {
-      setWorkspace(null);
       return;
     }
 
@@ -704,7 +777,18 @@ export function ProjectIndexPage() {
   const timeline = useProgrammeTimeline({
     items: workspace?.reportingProgramme ?? [],
     range: timelineRange,
-    onItemsChange: (items) => setWorkspace((current) => current ? { ...current, reportingProgramme: items } : current),
+    onItemsChange: (items) => setWorkspace((current) => {
+      if (!current) return current;
+      const programme = {
+        ...current.programme,
+        records: current.programme.records.map((record) => {
+          const item = items.find((candidate) => candidate.id === record.id);
+          if (!item) return record;
+          return { ...record, reporting_start: item.startDate ? parseDateOnly(item.startDate) : undefined, reporting_end: item.endDate ? parseDateOnly(item.endDate) : undefined };
+        }),
+      };
+      return { ...current, programme, reportingProgramme: projectReportingProgrammeRows(programme) };
+    }),
     onCommit: (item) => {
       void handleReportingSave(item.id, {
         startDate: item.startDate,
@@ -898,61 +982,122 @@ export function ProjectIndexPage() {
     }
   }
 
-  async function handleReportingSave(
+  function handleReportingSave(
     itemId: string,
     patch: Partial<Pick<ReportingProgrammeItem, "startDate" | "endDate">>,
   ) {
     if (!workspace) return;
-
-    const existing = workspace.reportingProgramme.find(
-      (item) => item.id === itemId,
-    );
+    const projectGuid = workspace.summary.projectGuid;
+    const existing = workspace.reportingProgramme.find((item) => item.id === itemId);
+    const record = workspace.programme.records.find((candidate) => candidate.id === itemId);
     const nextStart = patch.startDate ?? existing?.startDate ?? "";
     const nextEnd = patch.endDate ?? existing?.endDate ?? "";
-
     if (nextStart && nextEnd && nextStart > nextEnd) {
-      setValidation((current) => ({
-        ...current,
-        [`reporting-${itemId}`]: "End date must be on or after start date.",
-      }));
+      setValidation((current) => ({ ...current, [`reporting-${itemId}`]: "End date must be on or after start date." }));
       setSaveState("error");
       return;
     }
-
-    setValidation((current) => ({
-      ...current,
-      [`reporting-${itemId}`]: undefined,
+    if (!record) return;
+    const datePatch = buildReportingDatePatch(patch);
+    const key = programmeWriteKey(projectGuid, `project_programme:${record.programme_item_definition_guid}`);
+    const revision = nextProgrammeRevision(key);
+    patchProgrammeState((programme) => ({
+      ...programme,
+      records: programme.records.map((candidate) => candidate.id === itemId ? {
+        ...candidate,
+        ...(Object.prototype.hasOwnProperty.call(datePatch, "reporting_start") ? { reporting_start: datePatch.reporting_start ?? undefined } : {}),
+        ...(Object.prototype.hasOwnProperty.call(datePatch, "reporting_end") ? { reporting_end: datePatch.reporting_end ?? undefined } : {}),
+      } : candidate),
     }));
     setSaveState("saving");
-
-    try {
-      await updateReportingProgrammeItem(itemId, patch);
-      setWorkspace((current) =>
-        current
-          ? {
-              ...current,
-              reportingProgramme: current.reportingProgramme.map((item) =>
-                item.id === itemId ? { ...item, ...patch } : item,
-              ),
-              summary: {
-                ...current.summary,
-                lastEditedBy: user?.email ?? current.summary.lastEditedBy,
-                lastUpdatedAt: new Intl.DateTimeFormat("en-GB", {
-                  day: "2-digit",
-                  month: "short",
-                  year: "numeric",
-                }).format(new Date()),
-              },
-            }
-          : current,
-      );
-      setSaveState("saved");
-    } catch (err) {
+    void programmeWriteQueue.current.enqueue(key, () => updateProjectProgrammeDates(record.id, datePatch)).then(() => {
+      if (isCurrentProgrammeWrite(projectGuid, key, revision)) {
+        setError(null);
+        setSaveState("saved");
+      }
+    }).catch((err) => {
+      if (!isCurrentProgrammeWrite(projectGuid, key, revision)) return;
       setSaveState("error");
-      setError(
-        err instanceof Error ? err.message : "Unable to save reporting item.",
-      );
-    }
+      setError(err instanceof Error ? err.message : "Unable to save reporting item.");
+      scheduleProgrammeReconciliation(projectGuid);
+    });
+  }
+
+  function handleTargetDatePatch(definitionGuid: string, patch: { target_start?: string; target_end?: string }) {
+    if (!workspace) return;
+    const projectGuid = workspace.summary.projectGuid;
+    const row = projectTargetProgrammeStageWorkspace(workspace.programme, workspace.summary.reportingStage, "ddtc").rows.find((candidate) => candidate.definitionGuid === definitionGuid);
+    const record = workspace.programme.records.find((candidate) => candidate.programme_item_definition_guid === definitionGuid);
+    if (!row || !record) return;
+    if (Object.prototype.hasOwnProperty.call(patch, "target_start") && !row.isStartEditable) { setError("Target Start is read-only."); setSaveState("error"); return; }
+    if (Object.prototype.hasOwnProperty.call(patch, "target_end") && !row.isEndEditable) { setError("Target End is read-only."); setSaveState("error"); return; }
+    const start = Object.prototype.hasOwnProperty.call(patch, "target_start") ? (patch.target_start ? parseDateOnly(patch.target_start) : null) : record.target_start;
+    const end = Object.prototype.hasOwnProperty.call(patch, "target_end") ? (patch.target_end ? parseDateOnly(patch.target_end) : null) : record.target_end;
+    if (start && end && end < start) { setError("Target End must be on or after Target Start."); setSaveState("error"); return; }
+    const key = programmeWriteKey(projectGuid, `project_programme:${definitionGuid}`);
+    const revision = nextProgrammeRevision(key);
+    patchProgrammeState((programme) => ({
+      ...programme,
+      records: programme.records.map((candidate) => candidate.programme_item_definition_guid === definitionGuid ? {
+        ...candidate,
+        ...(Object.prototype.hasOwnProperty.call(patch, "target_start") ? { target_start: start ?? undefined } : {}),
+        ...(Object.prototype.hasOwnProperty.call(patch, "target_end") ? { target_end: end ?? undefined } : {}),
+      } : candidate),
+    }));
+    setSaveState("saving");
+    void programmeWriteQueue.current.enqueue(key, () => updateTargetProgrammeDates(projectGuid, "ddtc", definitionGuid, patch)).then(() => {
+      if (isCurrentProgrammeWrite(projectGuid, key, revision)) {
+        setError(null);
+        setSaveState("saved");
+      }
+    }).catch((err) => {
+      if (!isCurrentProgrammeWrite(projectGuid, key, revision)) return;
+      setSaveState("error");
+      setError(err instanceof Error ? err.message : "Unable to save Target dates.");
+      scheduleProgrammeReconciliation(projectGuid);
+    });
+  }
+
+  function handleTargetStatusPatch(patch: { ragCode?: string; ragComment?: string }) {
+    if (!workspace) return;
+    const projectGuid = workspace.summary.projectGuid;
+    const status = workspace.programme.stageStatuses.find((candidate) => candidate.stage_code === "ddtc");
+    if (!status) return;
+    const key = programmeWriteKey(projectGuid, "target_stage_status:ddtc");
+    const revision = nextProgrammeRevision(key);
+    patchProgrammeState((programme) => ({ ...programme, stageStatuses: programme.stageStatuses.map((candidate) => candidate.guid === status.guid ? { ...candidate, ...(Object.prototype.hasOwnProperty.call(patch, "ragCode") ? { rag_code: patch.ragCode || undefined } : {}), ...(Object.prototype.hasOwnProperty.call(patch, "ragComment") ? { rag_comment: patch.ragComment || undefined } : {}) } : candidate) }));
+    setSaveState("saving");
+    void programmeWriteQueue.current.enqueue(key, () => updateTargetStageStatus(projectGuid, "ddtc", patch)).then(() => {
+      if (isCurrentProgrammeWrite(projectGuid, key, revision)) {
+        setError(null);
+        setSaveState("saved");
+      }
+    }).catch((err) => {
+      if (!isCurrentProgrammeWrite(projectGuid, key, revision)) return;
+      setSaveState("error");
+      setError(err instanceof Error ? err.message : "Unable to save DDTC status.");
+      scheduleProgrammeReconciliation(projectGuid);
+    });
+  }
+
+  function handlePlanningStatus(value: string) {
+    if (!workspace || !workspace.programme.ddtcDetail) return;
+    const projectGuid = workspace.summary.projectGuid;
+    const key = programmeWriteKey(projectGuid, "target_ddtc_detail");
+    const revision = nextProgrammeRevision(key);
+    patchProgrammeState((programme) => ({ ...programme, ddtcDetail: programme.ddtcDetail ? { ...programme.ddtcDetail, planning_status_code: value || undefined } : programme.ddtcDetail }));
+    setSaveState("saving");
+    void programmeWriteQueue.current.enqueue(key, () => updateTargetDdtcDetail(projectGuid, value)).then(() => {
+      if (isCurrentProgrammeWrite(projectGuid, key, revision)) {
+        setError(null);
+        setSaveState("saved");
+      }
+    }).catch((err) => {
+      if (!isCurrentProgrammeWrite(projectGuid, key, revision)) return;
+      setSaveState("error");
+      setError(err instanceof Error ? err.message : "Unable to save Planning Status.");
+      scheduleProgrammeReconciliation(projectGuid);
+    });
   }
 
   return (
@@ -2083,6 +2228,13 @@ export function ProjectIndexPage() {
               <TargetProgrammePanel
                 projectGuid={workspace.summary.projectGuid}
                 reportingStage={workspace.summary.reportingStage}
+                projectIsActive={workspace.summary.isActive}
+                programme={workspace.programme}
+                saveState={saveState}
+                error={error}
+                onDatePatch={handleTargetDatePatch}
+                onStatusPatch={handleTargetStatusPatch}
+                onPlanningStatus={handlePlanningStatus}
               />
             ) : activeTab === "tenure" ? (
               <PlaceholderPanel title="Tenure" />

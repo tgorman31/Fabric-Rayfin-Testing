@@ -1,23 +1,29 @@
 import { useMemo, useState } from "react";
 
 import { TargetProgrammeStageWorkspace } from "@/components/programme/TargetProgrammeStageWorkspace";
+import {
+  isImplementedTargetStage,
+  projectTargetProgrammeStageWorkspace,
+  type ProjectProgrammeClientState,
+} from "@/services/targetProgrammeService";
 
 import {
   buildTargetStageStates,
+  isTargetStageEditable,
   resolveTargetStageCode,
   TARGET_PROGRAMME_STAGES,
   type TargetStageCode,
   type TargetStageState,
 } from "@/domain/targetProgrammeStages";
 
-function positionLabel(stage: TargetStageState): string {
+function positionLabel(stage: TargetStageState, projectIsActive: boolean): string {
   switch (stage.position) {
     case "previous":
       return "Read-only";
     case "current":
-      return "Current · Editable";
+      return `Current · ${isTargetStageEditable(stage, projectIsActive) ? "Editable" : "Read-only"}`;
     case "future":
-      return "Forward planning · Editable";
+      return `Forward planning · ${isTargetStageEditable(stage, projectIsActive) ? "Editable" : "Read-only"}`;
     default:
       return "Read-only · Unmapped";
   }
@@ -33,7 +39,17 @@ function positionClasses(stage: TargetStageState): string {
   return "border-slate-200 bg-white text-slate-700 hover:border-[#8fb73e] hover:bg-[#f7fbf8]";
 }
 
-export function TargetProgrammePanel({ projectGuid, reportingStage }: { projectGuid: string; reportingStage: string }) {
+export function TargetProgrammePanel({ projectGuid, reportingStage, projectIsActive, programme, saveState, error, onDatePatch, onStatusPatch, onPlanningStatus }: {
+  projectGuid: string;
+  reportingStage: string;
+  projectIsActive: boolean;
+  programme: ProjectProgrammeClientState;
+  saveState: "idle" | "saving" | "saved" | "error";
+  error: string | null;
+  onDatePatch: (definitionGuid: string, patch: { target_start?: string; target_end?: string }) => void;
+  onStatusPatch: (patch: { ragCode?: string; ragComment?: string }) => void;
+  onPlanningStatus: (value: string) => void;
+}) {
   const stages = useMemo(
     () => buildTargetStageStates(reportingStage),
     [reportingStage],
@@ -43,6 +59,9 @@ export function TargetProgrammePanel({ projectGuid, reportingStage }: { projectG
     () => mappedStage ?? TARGET_PROGRAMME_STAGES[0].code,
   );
   const selectedStage = stages.find((stage) => stage.code === selectedStageCode) ?? stages[0];
+  const selectedWorkspace = isImplementedTargetStage(selectedStage.code)
+    ? projectTargetProgrammeStageWorkspace(programme, reportingStage, selectedStage.code, { projectIsEditable: projectIsActive })
+    : null;
 
   return (
     <section className="rounded-4xl border border-white/70 bg-white p-7 shadow-sm">
@@ -71,7 +90,7 @@ export function TargetProgrammePanel({ projectGuid, reportingStage }: { projectG
           >
             <span className="block text-sm font-semibold">{stage.label}</span>
             <span className="mt-2 block text-xs font-medium uppercase tracking-[0.12em] opacity-75">
-              {positionLabel(stage)}
+              {positionLabel(stage, projectIsActive)}
             </span>
           </button>
         ))}
@@ -80,8 +99,14 @@ export function TargetProgrammePanel({ projectGuid, reportingStage }: { projectG
       {selectedStage.code === "ddtc" ? (
         <TargetProgrammeStageWorkspace
           key={`${projectGuid}-${reportingStage}-${selectedStage.code}`}
-          projectGuid={projectGuid}
+          workspace={selectedWorkspace!}
           stage={selectedStage}
+          projectIsActive={projectIsActive}
+          saveState={saveState}
+          error={error}
+          onDatePatch={onDatePatch}
+          onStatusPatch={onStatusPatch}
+          onPlanningStatus={onPlanningStatus}
         />
       ) : null}
       {selectedStage.code !== "ddtc" ? <div className="mt-6 rounded-4xl border border-slate-200 bg-slate-50/70 p-6">
@@ -91,7 +116,7 @@ export function TargetProgrammePanel({ projectGuid, reportingStage }: { projectG
             <h4 className="mt-2 text-lg font-semibold text-slate-950">{selectedStage.label}</h4>
           </div>
           <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${selectedStage.isEditable ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"}`}>
-            {selectedStage.isEditable ? "Editable" : "Read-only"}
+            {isTargetStageEditable(selectedStage, projectIsActive) ? "Editable" : "Read-only"}
           </span>
         </div>
         <p className="mt-4 text-sm leading-6 text-slate-500">

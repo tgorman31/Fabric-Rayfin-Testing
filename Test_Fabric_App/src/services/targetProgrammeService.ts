@@ -19,26 +19,33 @@ import {
   type TargetProgrammeStageRow,
   type TargetProjectionInput,
 } from "@/domain/targetProgramme";
-import { dateOnlyKey, parseDateOnly } from "@/domain/reportingProgramme";
+import {
+  dateOnlyKey,
+  mapCanonicalReportingView,
+  parseDateOnly,
+  sortReportingDefinitions,
+} from "@/domain/reportingProgramme";
 import {
   evaluateTargetProgramme,
+  resolveReportingMappings,
   type DependencyDefinition,
   type ProgrammeDateRecord,
   type ProgrammeRuleDefinition,
   type SummaryMembership,
 } from "@/domain/programmeRules";
 import {
+  ensureCanonicalReportingProgramme,
   ensureProjectProgrammeRecord,
   listActiveDependencyDefinitions,
   listActiveProgrammeDefinitions,
-
+  listActiveReportingMappings,
   listActiveSummaryMembers,
   listProjectProgrammeRecords,
-  resolveProjectReportingMappings,
   updateProjectProgrammeDates,
   type DependencyDefinitionRecord,
   type ProgrammeDefinitionRecord,
   type ProjectProgrammeRecord,
+  type ReportingMappingRecord,
   type SummaryMemberRecord,
 } from "./programmeService";
 import { getRayfinClient } from "./rayfinClient";
@@ -74,12 +81,24 @@ export type TargetDdtcDetailRecord = Pick<
   | "updated_by_user_email"
 >;
 
+export type ProjectProgrammeClientState = {
+  definitions: ProgrammeDefinitionRecord[];
+  records: ProjectProgrammeRecord[];
+  summaryMembers: SummaryMemberRecord[];
+  dependencies: DependencyDefinitionRecord[];
+  reportingMappings: ReportingMappingRecord[];
+  stageStatuses: TargetStageStatusRecord[];
+  ddtcDetail?: TargetDdtcDetailRecord;
+};
+
 export type TargetProgrammeStageWorkspace = {
   stage: TargetStageState;
   rows: TargetProgrammeStageRow[];
-  stageStatus: TargetStageStatusRecord;
+  stageStatus?: TargetStageStatusRecord;
   ddtcDetail?: TargetDdtcDetailRecord;
 };
+
+export type ReportingProgrammeProjection = ReturnType<typeof mapCanonicalReportingView>;
 
 const STATUS_FIELDS = [
   "id", "guid", "project_guid", "stage_code", "rag_code", "rag_comment",
@@ -94,6 +113,10 @@ const DDTC_DETAIL_FIELDS = [
 const ACTIVE_PROJECT_FIELDS = ["guid", "effective_to"] as const;
 const PROJECT_SUMMARY_FIELDS = ["project_guid", "reporting_stage_code"] as const;
 const ACTIVE_EFFECTIVE_TO = "2099-12-31";
+
+export function shouldInitializeImplementedTarget(effectiveTo: Date | undefined): boolean {
+  return dateOnlyKey(effectiveTo) === ACTIVE_EFFECTIVE_TO;
+}
 
 type CurrentUser = { id: string; email: string };
 type ProjectProgrammeContext = { projectGuid: string; reportingStage: string };
@@ -162,10 +185,66 @@ function ruleMemberships(records: SummaryMemberRecord[]): SummaryMembership[] {
 }
 
 
+function ruleMappings(records: ReportingMappingRecord[]) {
+  return records.map((mapping) => ({
+    guid: mapping.guid,
+    reportingItemDefinitionGuid: mapping.reporting_item_definition_guid,
+    reportingField: mapping.reporting_field,
+    targetItemDefinitionGuid: mapping.target_item_definition_guid,
+    targetField: mapping.target_field,
+    reportingReferenceItemDefinitionGuid: mapping.reporting_reference_item_definition_guid,
+    isActive: mapping.is_active,
+  }));
+}
+
 function fieldControllers(dependencies: DependencyDefinitionRecord[]): Set<string> {
   return new Set(dependencies.map((dependency) => `${dependency.successor_item_definition_guid}:${dependency.successor_field}`));
 }
 
+
+function stateMappingResolutions(state: ProjectProgrammeClientState) {
+  return resolveReportingMappings(
+    ruleDefinitions(state.definitions),
+    ruleRecords(state.records),
+    ruleMappings(state.reportingMappings),
+  );
+}
+
+function stateEvaluation(state: ProjectProgrammeClientState) {
+  return evaluateTargetProgramme(
+    ruleDefinitions(state.definitions),
+    ruleRecords(state.records),
+    ruleDependencies(state.dependencies),
+    ruleMemberships(state.summaryMembers),
+  );
+}
+
+export function projectReportingProgrammeRows(
+  state: ProjectProgrammeClientState,
+): ReportingProgrammeProjection[] {
+  const definitions = sortReportingDefinitions(
+    state.definitions.filter((definition) => definition.programme_area === "reporting"),
+  );
+  const records = new Map(state.records.map((record) => [record.programme_item_definition_guid, record]));
+  return definitions
+    .map((definition) => {
+      const record = records.get(definition.guid);
+      return record ? mapCanonicalReportingView(definition, record) : undefined;
+    })
+    .filter((row): row is ReportingProgrammeProjection => Boolean(row));
+}
+
+export function isImplementedTargetStage(stageCode: string): stageCode is "ddtc" {
+  return stageCode === "ddtc";
+}
+
+export function isImplementedTargetOperationalDefinition(
+  definition: Pick<ProgrammeDefinitionRecord, "programme_area" | "stage_code" | "row_type">,
+): boolean {
+  return definition.programme_area === "target"
+    && definition.stage_code === "ddtc"
+    && (definition.row_type === "activity" || definition.row_type === "milestone");
+}
 
 function assertKnownStage(stageCode: string): asserts stageCode is TargetStageCode {
   if (!TARGET_PROGRAMME_STAGES.some((stage) => stage.code === stageCode)) {
@@ -186,6 +265,63 @@ function assertStageWriteable(stageCode: string, reportingStage: string): Target
     throw new Error("Previous or unmapped Target Programme stages are read-only.");
   }
   return state;
+}
+
+export function projectTargetProgrammeStageWorkspace(
+  state: ProjectProgrammeClientState,
+  reportingStage: string,
+  stageCode: string,
+  options: { projectIsEditable?: boolean } = {},
+): TargetProgrammeStageWorkspace {
+  const stage = getStageState(stageCode, reportingStage);
+  const stageDefinitions = state.definitions.filter(
+    (definition) => definition.programme_area === "target" && definition.stage_code === stageCode,
+  );
+  const records = new Map(state.records.map((record) => [record.programme_item_definition_guid, record]));
+  const evaluation = stateEvaluation(state);
+  const effectiveRecords = new Map(evaluation.effectiveRecords.map((record) => [record.programmeItemDefinitionGuid, record]));
+  const controllers = fieldControllers(state.dependencies);
+  const mappingResolutions = stateMappingResolutions(state);
+  const resolutionByReference = new Map<string, typeof mappingResolutions>();
+  for (const resolution of mappingResolutions) {
+    if (!resolution.reportingReferenceDefinition) continue;
+    const list = resolutionByReference.get(resolution.reportingReferenceDefinition.guid) ?? [];
+    list.push(resolution);
+    resolutionByReference.set(resolution.reportingReferenceDefinition.guid, list);
+  }
+  const projectionInputs: TargetProjectionInput[] = stageDefinitions.map((definition) => {
+    const effective = effectiveRecords.get(definition.guid);
+    const summary = evaluation.summaryDates.get(definition.guid);
+    const referenceResolutions = resolutionByReference.get(definition.guid) ?? [];
+    return {
+      definition: {
+        guid: definition.guid,
+        itemCode: definition.item_code,
+        rowLabel: definition.row_label,
+        rowType: definition.row_type as TargetProjectionInput["definition"]["rowType"],
+        sortOrder: definition.sort_order,
+        isEditable: definition.is_editable,
+      },
+      recordId: records.get(definition.guid)?.id,
+      targetStart: effective?.targetStart,
+      targetEnd: effective?.targetEnd,
+      summaryStart: summary?.targetStart,
+      summaryEnd: summary?.targetEnd,
+      reportingReferenceStart: referenceResolutions.find((resolution) => resolution.reportingField === "reporting_start")?.reportingValue,
+      reportingReferenceEnd: referenceResolutions.find((resolution) => resolution.reportingField === "reporting_end")?.reportingValue,
+      startControlled: controllers.has(`${definition.guid}:target_start`),
+      endControlled: controllers.has(`${definition.guid}:target_end`),
+      projectIsEditable: options.projectIsEditable,
+      stage,
+    };
+  });
+  const stageStatus = state.stageStatuses.find((status) => status.stage_code === stageCode);
+  return {
+    stage,
+    rows: projectTargetProgrammeRows(projectionInputs),
+    stageStatus,
+    ddtcDetail: stageCode === "ddtc" ? state.ddtcDetail : undefined,
+  };
 }
 
 async function ensureStageStatus(projectGuid: string, stageCode: string): Promise<TargetStageStatusRecord> {
@@ -230,15 +366,28 @@ export async function updateTargetStageStatus(
   return getRayfinClient().data.project_target_stage_status.update({ id: current.id }, update as never);
 }
 
-export async function getOrEnsureTargetDdtcDetail(projectGuid: string): Promise<TargetDdtcDetailRecord> {
-  const client = getRayfinClient().data.project_target_ddtc_detail;
-  const existing = await client.select(DDTC_DETAIL_FIELDS)
+async function listTargetStageStatuses(projectGuid: string): Promise<TargetStageStatusRecord[]> {
+  return getRayfinClient().data.project_target_stage_status
+    .select(STATUS_FIELDS)
     .where({ project_guid: { eq: projectGuid } })
     .first(-1)
     .execute();
-  const existingRecord = selectSingleLogicalRecord(existing, `DDTC detail for ${projectGuid}`);
+}
+
+async function getExistingTargetDdtcDetail(projectGuid: string): Promise<TargetDdtcDetailRecord | undefined> {
+  const existing = await getRayfinClient().data.project_target_ddtc_detail
+    .select(DDTC_DETAIL_FIELDS)
+    .where({ project_guid: { eq: projectGuid } })
+    .first(-1)
+    .execute();
+  return selectSingleLogicalRecord(existing, `DDTC detail for ${projectGuid}`) ?? undefined;
+}
+
+export async function getOrEnsureTargetDdtcDetail(projectGuid: string): Promise<TargetDdtcDetailRecord> {
+  const existingRecord = await getExistingTargetDdtcDetail(projectGuid);
   if (existingRecord) return existingRecord;
 
+  const client = getRayfinClient().data.project_target_ddtc_detail;
   const user = getCurrentUser();
   const now = new Date();
   const id = crypto.randomUUID();
@@ -264,69 +413,54 @@ export async function updateTargetDdtcDetail(
   } as never);
 }
 
+export async function loadProjectProgrammeClientState(
+  projectGuid: string,
+  options: { initializeImplementedTarget?: boolean } = {},
+): Promise<ProjectProgrammeClientState> {
+  await ensureCanonicalReportingProgramme(projectGuid);
+  const definitions = await listActiveProgrammeDefinitions();
+  const initializeImplementedTarget = options.initializeImplementedTarget ?? true;
+  const operationalTargetDefinitions = initializeImplementedTarget
+    ? definitions.filter(isImplementedTargetOperationalDefinition)
+    : [];
+  if (initializeImplementedTarget) {
+    await Promise.all(operationalTargetDefinitions.map((definition) =>
+      ensureProjectProgrammeRecord(projectGuid, definition.guid),
+    ));
+  }
+  const [records, summaryMembers, dependencies, reportingMappings, ddtcDetail] = await Promise.all([
+    listProjectProgrammeRecords(projectGuid),
+    listActiveSummaryMembers(),
+    listActiveDependencyDefinitions(),
+    listActiveReportingMappings(),
+    initializeImplementedTarget
+      ? getOrEnsureTargetDdtcDetail(projectGuid)
+      : getExistingTargetDdtcDetail(projectGuid),
+  ]);
+  const ddtcStatus = initializeImplementedTarget
+    ? await ensureStageStatus(projectGuid, "ddtc")
+    : undefined;
+  const stageStatuses = await listTargetStageStatuses(projectGuid);
+  return {
+    definitions,
+    records,
+    summaryMembers,
+    dependencies,
+    reportingMappings,
+    stageStatuses: ddtcStatus && !stageStatuses.some((status) => status.guid === ddtcStatus.guid)
+      ? [...stageStatuses, ddtcStatus]
+      : stageStatuses,
+    ddtcDetail,
+  };
+}
+
 export async function getTargetProgrammeStageWorkspace(
   projectGuid: string,
   stageCode: string,
 ): Promise<TargetProgrammeStageWorkspace> {
   const context = await getPersistedProjectContext(projectGuid);
-  const stage = getStageState(stageCode, context.reportingStage);
-  const definitions = await listActiveProgrammeDefinitions({ programmeArea: "target" });
-  const allDefinitions = await listActiveProgrammeDefinitions();
-  const stageDefinitions = definitions.filter((definition) => definition.stage_code === stageCode);
-  const authoritativeDefinitions = stageDefinitions.filter((definition) => ["activity", "milestone"].includes(definition.row_type));
-  await Promise.all(authoritativeDefinitions.map((definition) => ensureProjectProgrammeRecord(projectGuid, definition.guid)));
-
-  const records = await listProjectProgrammeRecords(projectGuid);
-  const dependencies = await listActiveDependencyDefinitions();
-  const memberships = await listActiveSummaryMembers();
-  const mappingResolutions = await resolveProjectReportingMappings(projectGuid);
-  const evaluation = evaluateTargetProgramme(
-    ruleDefinitions(allDefinitions),
-    ruleRecords(records),
-    ruleDependencies(dependencies),
-    ruleMemberships(memberships),
-  );
-  const effectiveRecords = new Map(evaluation.effectiveRecords.map((record) => [record.programmeItemDefinitionGuid, record]));
-  const rawRecords = new Map(records.map((record) => [record.programme_item_definition_guid, record]));
-  const controllers = fieldControllers(dependencies);
-  const resolutionByReference = new Map<string, typeof mappingResolutions>();
-  for (const resolution of mappingResolutions) {
-    if (!resolution.reportingReferenceDefinition) continue;
-    const list = resolutionByReference.get(resolution.reportingReferenceDefinition.guid) ?? [];
-    list.push(resolution);
-    resolutionByReference.set(resolution.reportingReferenceDefinition.guid, list);
-  }
-
-  const projectionInputs: TargetProjectionInput[] = stageDefinitions.map((definition) => {
-    const effective = effectiveRecords.get(definition.guid);
-    const summary = evaluation.summaryDates.get(definition.guid);
-    const referenceResolutions = resolutionByReference.get(definition.guid) ?? [];
-    return {
-      definition: {
-        guid: definition.guid,
-        itemCode: definition.item_code,
-        rowLabel: definition.row_label,
-        rowType: definition.row_type as TargetProjectionInput["definition"]["rowType"],
-        sortOrder: definition.sort_order,
-        isEditable: definition.is_editable,
-      },
-      recordId: rawRecords.get(definition.guid)?.id,
-      targetStart: effective?.targetStart,
-      targetEnd: effective?.targetEnd,
-      summaryStart: summary?.targetStart,
-      summaryEnd: summary?.targetEnd,
-      reportingReferenceStart: referenceResolutions.find((resolution) => resolution.reportingField === "reporting_start")?.reportingValue,
-      reportingReferenceEnd: referenceResolutions.find((resolution) => resolution.reportingField === "reporting_end")?.reportingValue,
-      startControlled: controllers.has(`${definition.guid}:target_start`),
-      endControlled: controllers.has(`${definition.guid}:target_end`),
-      stage,
-    };
-  });
-  const rows = projectTargetProgrammeRows(projectionInputs);
-
-  const stageStatus = await ensureStageStatus(projectGuid, stageCode);
-  const ddtcDetail = stageCode === "ddtc" ? await getOrEnsureTargetDdtcDetail(projectGuid) : undefined;
-  return { stage, rows, stageStatus, ddtcDetail };
+  const state = await loadProjectProgrammeClientState(projectGuid);
+  return projectTargetProgrammeStageWorkspace(state, context.reportingStage, stageCode);
 }
 
 export async function updateTargetProgrammeDate(
@@ -335,7 +469,7 @@ export async function updateTargetProgrammeDate(
   definitionGuid: string,
   field: "target_start" | "target_end",
   value: string,
-): Promise<TargetProgrammeStageWorkspace> {
+): Promise<void> {
   return updateTargetProgrammeDates(projectGuid, stageCode, definitionGuid, {
     [field]: value,
   });
@@ -346,7 +480,7 @@ export async function updateTargetProgrammeDates(
   stageCode: string,
   definitionGuid: string,
   patch: { target_start?: string; target_end?: string },
-): Promise<TargetProgrammeStageWorkspace> {
+): Promise<void> {
   const context = await getPersistedProjectContext(projectGuid);
   assertStageWriteable(stageCode, context.reportingStage);
   const definitions = await listActiveProgrammeDefinitions();
@@ -380,5 +514,4 @@ export async function updateTargetProgrammeDates(
   }
   const record = await ensureProjectProgrammeRecord(projectGuid, definitionGuid);
   await updateProjectProgrammeDates(record.id, parsedPatch);
-  return getTargetProgrammeStageWorkspace(projectGuid, stageCode);
 }
