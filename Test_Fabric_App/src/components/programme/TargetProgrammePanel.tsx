@@ -61,7 +61,8 @@ export function TargetProgrammePanel({ projectGuid, reportingStage, projectIsAct
     () => mappedStage ?? TARGET_PROGRAMME_STAGES[0].code,
   );
   const selectedStage = stages.find((stage) => stage.code === selectedStageCode) ?? stages[0];
-  const selectedWorkspace = isImplementedTargetStage(selectedStage.code)
+  const implemented = isImplementedTargetStage(selectedStage.code);
+  const selectedWorkspace = implemented
     ? projectTargetProgrammeStageWorkspace(programme, reportingStage, selectedStage.code, { projectIsEditable: projectIsActive })
     : null;
 
@@ -71,7 +72,7 @@ export function TargetProgrammePanel({ projectGuid, reportingStage, projectIsAct
         <div>
           <h3 className="text-xl font-semibold text-slate-950">Target Programme</h3>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
-            Select a programme stage to view its workspace. Programme content will be added in a subsequent implementation slice.
+            Select a programme stage to view its configured programme workspace.
           </p>
         </div>
         {!mappedStage ? (
@@ -98,7 +99,7 @@ export function TargetProgrammePanel({ projectGuid, reportingStage, projectIsAct
         ))}
       </nav>
 
-      {selectedStage.code === "ddtc" ? (
+      {implemented && selectedWorkspace ? (
         <TargetProgrammeStageWorkspace
           key={`${projectGuid}-${reportingStage}-${selectedStage.code}`}
           workspace={selectedWorkspace!}
@@ -112,7 +113,7 @@ export function TargetProgrammePanel({ projectGuid, reportingStage, projectIsAct
           onPlanningDetail={onPlanningDetail}
         />
       ) : null}
-      {selectedStage.code !== "ddtc" ? <div className="mt-6 rounded-4xl border border-slate-200 bg-slate-50/70 p-6">
+      {!implemented ? <div className="mt-6 rounded-4xl border border-slate-200 bg-slate-50/70 p-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Selected stage</p>
