@@ -1,6 +1,6 @@
 # Project documentation
 
-This is the audience-oriented entry point for the Fabric Rayfin Project Index application. The Markdown in this repository is explanatory documentation; the canonical requirements and decisions remain the three root Markdown files.
+This is the audience-oriented entry point for the Fabric Rayfin Project Index application. The three root Markdown files remain authoritative for product requirements, engineering roadmap and the product/business decision register. Architecture Decision Records capture the rationale and guardrails for accepted material architecture choices; the other Markdown in `/docs` provides explanatory and support documentation.
 
 ## Choose where to start
 
@@ -31,6 +31,7 @@ Start with [How the application works](getting-started/how-the-application-works
 | Product and business requirements | [`SPEC.md`](../SPEC.md) |
 | Engineering roadmap and architecture constraints | [`IMPLEMENTATION-PLAN.md`](../IMPLEMENTATION-PLAN.md) |
 | Confirmed decisions and unresolved questions | [`SPEC-QUESTIONNAIRE.md`](../SPEC-QUESTIONNAIRE.md) |
+| Rationale and guardrails for accepted material architecture choices | [Architecture Decision Records](decisions/README.md) |
 | Explanatory and support material | This `/docs` directory |
 | Implementation work and delivery status | GitHub Issues and pull requests |
 
@@ -38,7 +39,7 @@ When current code differs from a planned document, documentation should say **Cu
 
 ## Planned documentation
 
-The following are intentionally not created as empty files: detailed Programme Admin user manual, data model reference, deployment standard operating procedure, incident-response runbook, backup/recovery procedure, full threat model, and architecture decision records.
+The following are intentionally not created as empty files: detailed Programme Admin user manual, data model reference, deployment standard operating procedure, incident-response runbook, backup/recovery procedure, and full threat model.
 
 A future Help/Documentation surface may render a curated subset of these Markdown files read-only inside the application. If that happens, Git and the version-controlled Markdown remain authoritative.
 
