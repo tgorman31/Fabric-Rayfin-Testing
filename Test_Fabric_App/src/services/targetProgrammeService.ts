@@ -230,6 +230,18 @@ export function projectReportingProgrammeRows(
     .filter((row): row is ReportingProgrammeProjection => Boolean(row));
 }
 
+export function isImplementedTargetStage(stageCode: string): stageCode is "ddtc" {
+  return stageCode === "ddtc";
+}
+
+export function isImplementedTargetOperationalDefinition(
+  definition: Pick<ProgrammeDefinitionRecord, "programme_area" | "stage_code" | "row_type">,
+): boolean {
+  return definition.programme_area === "target"
+    && definition.stage_code === "ddtc"
+    && (definition.row_type === "activity" || definition.row_type === "milestone");
+}
+
 function assertKnownStage(stageCode: string): asserts stageCode is TargetStageCode {
   if (!TARGET_PROGRAMME_STAGES.some((stage) => stage.code === stageCode)) {
     throw new Error(`Unknown Target Programme stage: ${stageCode}`);
@@ -396,9 +408,7 @@ export async function loadProjectProgrammeClientState(
 ): Promise<ProjectProgrammeClientState> {
   await ensureCanonicalReportingProgramme(projectGuid);
   const definitions = await listActiveProgrammeDefinitions();
-  const operationalTargetDefinitions = definitions.filter((definition) =>
-    definition.programme_area === "target" && ["activity", "milestone"].includes(definition.row_type),
-  );
+  const operationalTargetDefinitions = definitions.filter(isImplementedTargetOperationalDefinition);
   await Promise.all(operationalTargetDefinitions.map((definition) =>
     ensureProjectProgrammeRecord(projectGuid, definition.guid),
   ));

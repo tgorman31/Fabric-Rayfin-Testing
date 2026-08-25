@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { buildTargetDatePatch } from "@/domain/targetProgramme";
 import { evaluateTargetProgramme } from "@/domain/programmeRules";
 import {
+  isImplementedTargetOperationalDefinition,
+  isImplementedTargetStage,
   projectReportingProgrammeRows,
   projectTargetProgrammeStageWorkspace,
   type ProjectProgrammeClientState,
@@ -31,6 +33,20 @@ const state = (overrides: Partial<ProjectProgrammeClientState>): ProjectProgramm
 } as ProjectProgrammeClientState);
 
 describe("project programme working-copy projections", () => {
+  it("only projects the implemented DDTC stage", () => {
+    expect(isImplementedTargetStage("ddtc")).toBe(true);
+    expect(isImplementedTargetStage("planning")).toBe(false);
+    expect(isImplementedTargetStage("land-activation")).toBe(false);
+    expect(() => projectTargetProgrammeStageWorkspace(state({ stageStatuses: [] }), "Planning", "planning")).toThrow();
+  });
+
+  it("initializes operational records only for active DDTC definitions", () => {
+    expect(isImplementedTargetOperationalDefinition({ programme_area: "target", stage_code: "ddtc", row_type: "activity" })).toBe(true);
+    expect(isImplementedTargetOperationalDefinition({ programme_area: "target", stage_code: "ddtc", row_type: "milestone" })).toBe(true);
+    expect(isImplementedTargetOperationalDefinition({ programme_area: "target", stage_code: "planning", row_type: "activity" })).toBe(false);
+    expect(isImplementedTargetOperationalDefinition({ programme_area: "target", stage_code: "construction", row_type: "milestone" })).toBe(false);
+    expect(isImplementedTargetOperationalDefinition({ programme_area: "target", stage_code: "ddtc", row_type: "summary" })).toBe(false);
+  });
   it("updates summary dates immediately from a local activity end patch", () => {
     const activity = definition("activity", "target", "activity");
     const summary = definition("summary", "target", "summary", "summary", 2);

@@ -1,7 +1,11 @@
 import { useMemo, useState } from "react";
 
 import { TargetProgrammeStageWorkspace } from "@/components/programme/TargetProgrammeStageWorkspace";
-import { projectTargetProgrammeStageWorkspace, type ProjectProgrammeClientState } from "@/services/targetProgrammeService";
+import {
+  isImplementedTargetStage,
+  projectTargetProgrammeStageWorkspace,
+  type ProjectProgrammeClientState,
+} from "@/services/targetProgrammeService";
 
 import {
   buildTargetStageStates,
@@ -53,10 +57,9 @@ export function TargetProgrammePanel({ projectGuid, reportingStage, programme, s
     () => mappedStage ?? TARGET_PROGRAMME_STAGES[0].code,
   );
   const selectedStage = stages.find((stage) => stage.code === selectedStageCode) ?? stages[0];
-  const selectedWorkspace = useMemo(
-    () => projectTargetProgrammeStageWorkspace(programme, reportingStage, selectedStage.code),
-    [programme, reportingStage, selectedStage.code],
-  );
+  const selectedWorkspace = isImplementedTargetStage(selectedStage.code)
+    ? projectTargetProgrammeStageWorkspace(programme, reportingStage, selectedStage.code)
+    : null;
 
   return (
     <section className="rounded-4xl border border-white/70 bg-white p-7 shadow-sm">
@@ -94,7 +97,7 @@ export function TargetProgrammePanel({ projectGuid, reportingStage, programme, s
       {selectedStage.code === "ddtc" ? (
         <TargetProgrammeStageWorkspace
           key={`${projectGuid}-${reportingStage}-${selectedStage.code}`}
-          workspace={selectedWorkspace}
+          workspace={selectedWorkspace!}
           stage={selectedStage}
           saveState={saveState}
           error={error}

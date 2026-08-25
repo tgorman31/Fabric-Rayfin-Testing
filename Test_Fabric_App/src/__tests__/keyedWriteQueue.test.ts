@@ -25,13 +25,46 @@ describe("keyed programme write queue", () => {
     expect(events).toEqual(["a-start", "a-end", "b-start"]);
   });
 
-  it("allows different keys to proceed independently and preserves failures", async () => {
+  it("fails closed for queued same-key successors and recovers for a fresh write", async () => {
+    const queue = createKeyedWriteQueue();
+    const events: string[] = [];
+    const first = queue.enqueue("project_programme:a", async () => {
+      events.push("a-start");
+      throw new Error("write failed");
+    });
+    const successor = queue.enqueue("project_programme:a", async () => {
+      events.push("b-start");
+      return "b";
+    });
+    await expect(first).rejects.toThrow("write failed");
+    await expect(successor).rejects.toThrow("write failed");
+    expect(events).toEqual(["a-start"]);
+
+    await expect(queue.enqueue("project_programme:a", async () => {
+      events.push("c-start");
+      return "c";
+    })).resolves.toBe("c");
+    expect(events).toEqual(["a-start", "c-start"]);
+  });
+
+  it("keeps different keys independent and drains all active keys", async () => {
     const queue = createKeyedWriteQueue();
     const first = deferred<void>();
-    const other = queue.enqueue("project_programme:b", async () => "other");
-    const failed = queue.enqueue("project_programme:a", async () => { await first.promise; throw new Error("write failed"); });
+    const events: string[] = [];
+    const failed = queue.enqueue("project_programme:a", async () => {
+      events.push("a-start");
+      await first.promise;
+      throw new Error("write failed");
+    });
+    const other = queue.enqueue("project_programme:b", async () => {
+      events.push("b-start");
+      return "other";
+    });
     await expect(other).resolves.toBe("other");
+    expect(events).toContain("b-start");
+    const idle = queue.whenIdle();
     first.resolve();
     await expect(failed).rejects.toThrow("write failed");
+    await expect(idle).resolves.toBeUndefined();
   });
 });
