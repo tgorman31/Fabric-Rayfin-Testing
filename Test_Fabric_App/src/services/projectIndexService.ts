@@ -6,17 +6,13 @@ import type { project_team_member } from "../../rayfin/data/project_team_member"
 
 import { hasProjectRegisterAccess } from "@/domain/projectRegisterAccess";
 import { REPORTING_STAGE_OPTIONS } from "@/domain/targetProgrammeStages";
+import { buildReportingDatePatch } from "@/domain/reportingProgramme";
+import { updateProjectProgrammeDates } from "./programmeService";
 import {
-  buildReportingDatePatch,
-  mapCanonicalReportingView,
-  sortReportingDefinitions,
-} from "@/domain/reportingProgramme";
-import {
-  ensureCanonicalReportingProgramme,
-  updateProjectProgrammeDates,
-  type ProgrammeDefinitionRecord,
-  type ProjectProgrammeRecord,
-} from "./programmeService";
+  loadProjectProgrammeClientState,
+  projectReportingProgrammeRows,
+  type ProjectProgrammeClientState,
+} from "./targetProgrammeService";
 import { getRayfinClient, isLocalBackend } from "./rayfinClient";
 
 const ACTIVE_EFFECTIVE_TO = "2099-12-31";
@@ -203,6 +199,7 @@ export type ReportingProgrammeItem = {
 export type ProjectIndexWorkspace = {
   summary: ProjectSummary;
   teamMembers: ProjectTeamMemberDraft[];
+  programme: ProjectProgrammeClientState;
   reportingProgramme: ReportingProgrammeItem[];
 };
 
@@ -536,7 +533,7 @@ export async function getProjectIndexWorkspace(
     throw new Error("Project not found.");
   }
 
-  const [siteMap, summary, teamRows, reporting] = await Promise.all([
+  const [siteMap, summary, teamRows, programme] = await Promise.all([
     findSiteMap([project.site_guid]),
     ensureSummary(project),
     getRayfinClient()
@@ -544,16 +541,13 @@ export async function getProjectIndexWorkspace(
       .where({ project_guid: { eq: project.guid } })
       .first(-1)
       .execute(),
-    ensureCanonicalReportingProgramme(project.guid),
+    loadProjectProgrammeClientState(project.guid),
   ]);
-  const recordsByDefinition = new Map(reporting.records.map((record) => [record.programme_item_definition_guid, record]));
-  const reportingRows = sortReportingDefinitions(reporting.definitions)
-    .map((definition) => ({ definition, record: recordsByDefinition.get(definition.guid) }))
-    .filter((entry): entry is { definition: ProgrammeDefinitionRecord; record: ProjectProgrammeRecord } => Boolean(entry.record))
-    .map(({ definition, record }) => mapCanonicalReportingView(definition, record));
+  const reportingRows = projectReportingProgrammeRows(programme);
 
   return {
     summary: mapSummary(project, siteMap.get(project.site_guid), summary),
+    programme,
     teamMembers: [...teamRows]
       .sort((left, right) =>
         (left.person_name ?? "").localeCompare(right.person_name ?? ""),

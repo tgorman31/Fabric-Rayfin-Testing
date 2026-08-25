@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
 import { TargetProgrammeStageWorkspace } from "@/components/programme/TargetProgrammeStageWorkspace";
+import { projectTargetProgrammeStageWorkspace, type ProjectProgrammeClientState } from "@/services/targetProgrammeService";
 
 import {
   buildTargetStageStates,
@@ -33,7 +34,16 @@ function positionClasses(stage: TargetStageState): string {
   return "border-slate-200 bg-white text-slate-700 hover:border-[#8fb73e] hover:bg-[#f7fbf8]";
 }
 
-export function TargetProgrammePanel({ projectGuid, reportingStage }: { projectGuid: string; reportingStage: string }) {
+export function TargetProgrammePanel({ projectGuid, reportingStage, programme, saveState, error, onDatePatch, onStatusPatch, onPlanningStatus }: {
+  projectGuid: string;
+  reportingStage: string;
+  programme: ProjectProgrammeClientState;
+  saveState: "idle" | "saving" | "saved" | "error";
+  error: string | null;
+  onDatePatch: (definitionGuid: string, patch: { target_start?: string; target_end?: string }) => void;
+  onStatusPatch: (patch: { ragCode?: string; ragComment?: string }) => void;
+  onPlanningStatus: (value: string) => void;
+}) {
   const stages = useMemo(
     () => buildTargetStageStates(reportingStage),
     [reportingStage],
@@ -43,6 +53,10 @@ export function TargetProgrammePanel({ projectGuid, reportingStage }: { projectG
     () => mappedStage ?? TARGET_PROGRAMME_STAGES[0].code,
   );
   const selectedStage = stages.find((stage) => stage.code === selectedStageCode) ?? stages[0];
+  const selectedWorkspace = useMemo(
+    () => projectTargetProgrammeStageWorkspace(programme, reportingStage, selectedStage.code),
+    [programme, reportingStage, selectedStage.code],
+  );
 
   return (
     <section className="rounded-4xl border border-white/70 bg-white p-7 shadow-sm">
@@ -80,8 +94,13 @@ export function TargetProgrammePanel({ projectGuid, reportingStage }: { projectG
       {selectedStage.code === "ddtc" ? (
         <TargetProgrammeStageWorkspace
           key={`${projectGuid}-${reportingStage}-${selectedStage.code}`}
-          projectGuid={projectGuid}
+          workspace={selectedWorkspace}
           stage={selectedStage}
+          saveState={saveState}
+          error={error}
+          onDatePatch={onDatePatch}
+          onStatusPatch={onStatusPatch}
+          onPlanningStatus={onPlanningStatus}
         />
       ) : null}
       {selectedStage.code !== "ddtc" ? <div className="mt-6 rounded-4xl border border-slate-200 bg-slate-50/70 p-6">
