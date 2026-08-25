@@ -37,6 +37,7 @@ export type TargetProjectionInput = {
   reportingReferenceEnd?: Date;
   startControlled: boolean;
   endControlled: boolean;
+  projectIsEditable?: boolean;
   stage: TargetStageState;
 };
 
@@ -46,9 +47,9 @@ function dateKey(value: Date | undefined): string {
 }
 
 export function projectTargetProgrammeRows(inputs: readonly TargetProjectionInput[]): TargetProgrammeStageRow[] {
-  return inputs.map(({ definition, recordId, targetStart, targetEnd, summaryStart, summaryEnd, reportingReferenceStart, reportingReferenceEnd, startControlled, endControlled, stage }) => {
+  return inputs.map(({ definition, recordId, targetStart, targetEnd, summaryStart, summaryEnd, reportingReferenceStart, reportingReferenceEnd, startControlled, endControlled, projectIsEditable, stage }) => {
     const operational = definition.rowType === "activity" || definition.rowType === "milestone";
-    const editable = stage.isEditable && definition.isEditable && operational;
+    const editable = projectIsEditable !== false && stage.isEditable && definition.isEditable && operational;
     const isSummary = definition.rowType === "summary";
     const isReference = definition.rowType === "reporting_reference";
     const targetStartValue = definition.rowType === "milestone" ? undefined : targetStart;

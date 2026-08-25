@@ -2228,6 +2228,7 @@ export function ProjectIndexPage() {
               <TargetProgrammePanel
                 projectGuid={workspace.summary.projectGuid}
                 reportingStage={workspace.summary.reportingStage}
+                projectIsActive={workspace.summary.isActive}
                 programme={workspace.programme}
                 saveState={saveState}
                 error={error}

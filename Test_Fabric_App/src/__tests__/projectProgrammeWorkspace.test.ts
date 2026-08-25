@@ -49,6 +49,24 @@ describe("project programme working-copy projections", () => {
     expect(historical.ddtcDetail).toBeUndefined();
   });
 
+  it("keeps DDTC editable only for active projects", () => {
+    const activity = definition("activity", "target", "activity");
+    const programme = state({ definitions: [activity] as never[], records: [record("activity", { targetStart: "2026-06-01", targetEnd: "2026-06-30" })] as never[] });
+    const activeCurrent = projectTargetProgrammeStageWorkspace(programme, "Detailed Design / Tender / Contract", "ddtc", { projectIsEditable: true });
+    const activeFuture = projectTargetProgrammeStageWorkspace(programme, "Planning", "ddtc", { projectIsEditable: true });
+    const historicalCurrent = projectTargetProgrammeStageWorkspace(programme, "Detailed Design / Tender / Contract", "ddtc", { projectIsEditable: false });
+    const historicalFuture = projectTargetProgrammeStageWorkspace(programme, "Planning", "ddtc", { projectIsEditable: false });
+
+    expect(activeCurrent.stage.position).toBe("current");
+    expect(activeCurrent.rows[0]).toMatchObject({ isStartEditable: true, isEndEditable: true, isMoveEditable: true });
+    expect(activeFuture.stage.position).toBe("future");
+    expect(activeFuture.rows[0]).toMatchObject({ isStartEditable: true, isEndEditable: true, isMoveEditable: true });
+    expect(historicalCurrent.stage.position).toBe("current");
+    expect(historicalCurrent.rows[0]).toMatchObject({ isStartEditable: false, isEndEditable: false, isMoveEditable: false });
+    expect(historicalFuture.stage.position).toBe("future");
+    expect(historicalFuture.rows[0]).toMatchObject({ isStartEditable: false, isEndEditable: false, isMoveEditable: false });
+  });
+
   it("initializes operational records only for active DDTC definitions", () => {
     expect(isImplementedTargetOperationalDefinition({ programme_area: "target", stage_code: "ddtc", row_type: "activity" })).toBe(true);
     expect(isImplementedTargetOperationalDefinition({ programme_area: "target", stage_code: "ddtc", row_type: "milestone" })).toBe(true);

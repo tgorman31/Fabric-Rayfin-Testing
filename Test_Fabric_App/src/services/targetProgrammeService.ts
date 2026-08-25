@@ -271,6 +271,7 @@ export function projectTargetProgrammeStageWorkspace(
   state: ProjectProgrammeClientState,
   reportingStage: string,
   stageCode: string,
+  options: { projectIsEditable?: boolean } = {},
 ): TargetProgrammeStageWorkspace {
   const stage = getStageState(stageCode, reportingStage);
   const stageDefinitions = state.definitions.filter(
@@ -310,6 +311,7 @@ export function projectTargetProgrammeStageWorkspace(
       reportingReferenceEnd: referenceResolutions.find((resolution) => resolution.reportingField === "reporting_end")?.reportingValue,
       startControlled: controllers.has(`${definition.guid}:target_start`),
       endControlled: controllers.has(`${definition.guid}:target_end`),
+      projectIsEditable: options.projectIsEditable,
       stage,
     };
   });

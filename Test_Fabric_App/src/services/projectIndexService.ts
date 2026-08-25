@@ -151,6 +151,7 @@ export type ProjectListItem = {
 
 export type ProjectSummary = {
   projectGuid: string;
+  isActive: boolean;
   projectRef: string;
   projectName: string;
   gateway: string;
@@ -293,6 +294,7 @@ function mapSummary(
 
   return {
     projectGuid: project.guid,
+    isActive: isActiveProject(project),
     projectRef: project.project_ref,
     projectName: summary?.project_name ?? "",
     gateway: summary?.gateway_code ?? "",

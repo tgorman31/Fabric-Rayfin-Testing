@@ -38,9 +38,10 @@ function positionClasses(stage: TargetStageState): string {
   return "border-slate-200 bg-white text-slate-700 hover:border-[#8fb73e] hover:bg-[#f7fbf8]";
 }
 
-export function TargetProgrammePanel({ projectGuid, reportingStage, programme, saveState, error, onDatePatch, onStatusPatch, onPlanningStatus }: {
+export function TargetProgrammePanel({ projectGuid, reportingStage, projectIsActive, programme, saveState, error, onDatePatch, onStatusPatch, onPlanningStatus }: {
   projectGuid: string;
   reportingStage: string;
+  projectIsActive: boolean;
   programme: ProjectProgrammeClientState;
   saveState: "idle" | "saving" | "saved" | "error";
   error: string | null;
@@ -58,7 +59,7 @@ export function TargetProgrammePanel({ projectGuid, reportingStage, programme, s
   );
   const selectedStage = stages.find((stage) => stage.code === selectedStageCode) ?? stages[0];
   const selectedWorkspace = isImplementedTargetStage(selectedStage.code)
-    ? projectTargetProgrammeStageWorkspace(programme, reportingStage, selectedStage.code)
+    ? projectTargetProgrammeStageWorkspace(programme, reportingStage, selectedStage.code, { projectIsEditable: projectIsActive })
     : null;
 
   return (
