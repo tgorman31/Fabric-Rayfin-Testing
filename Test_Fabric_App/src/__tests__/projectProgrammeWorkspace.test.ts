@@ -7,6 +7,7 @@ import {
   isImplementedTargetStage,
   projectReportingProgrammeRows,
   projectTargetProgrammeStageWorkspace,
+  shouldInitializeImplementedTarget,
   type ProjectProgrammeClientState,
 } from "@/services/targetProgrammeService";
 
@@ -37,7 +38,15 @@ describe("project programme working-copy projections", () => {
     expect(isImplementedTargetStage("ddtc")).toBe(true);
     expect(isImplementedTargetStage("planning")).toBe(false);
     expect(isImplementedTargetStage("land-activation")).toBe(false);
-    expect(() => projectTargetProgrammeStageWorkspace(state({ stageStatuses: [] }), "Planning", "planning")).toThrow();
+    expect(projectTargetProgrammeStageWorkspace(state({ stageStatuses: [] }), "Planning", "planning").stageStatus).toBeUndefined();
+  });
+
+  it("initializes only active projects and tolerates missing historical DDTC metadata", () => {
+    expect(shouldInitializeImplementedTarget(date("2099-12-31"))).toBe(true);
+    expect(shouldInitializeImplementedTarget(date("2026-01-01"))).toBe(false);
+    const historical = projectTargetProgrammeStageWorkspace(state({ stageStatuses: [], ddtcDetail: undefined }), "Construction", "ddtc");
+    expect(historical.stageStatus).toBeUndefined();
+    expect(historical.ddtcDetail).toBeUndefined();
   });
 
   it("initializes operational records only for active DDTC definitions", () => {

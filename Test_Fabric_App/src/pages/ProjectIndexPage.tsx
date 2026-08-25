@@ -686,8 +686,11 @@ export function ProjectIndexPage() {
   }, [searchText, includeHistory]);
 
   useEffect(() => {
+    setSaveState("idle");
+    setError(null);
+    setValidation({});
+    setWorkspace(null);
     if (!selectedProjectGuid) {
-      setWorkspace(null);
       return;
     }
 

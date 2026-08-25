@@ -52,7 +52,9 @@ export function TargetProgrammeStageWorkspace({
   onPlanningStatus: (value: string) => void;
 }) {
   const [timelineRows, setTimelineRows] = useState<TimelineTargetRow[]>(() => workspace.rows.map(toTimelineRow));
+  const [ragCommentDraft, setRagCommentDraft] = useState(workspace.stageStatus?.rag_comment ?? "");
   useEffect(() => setTimelineRows(workspace.rows.map(toTimelineRow)), [workspace.rows]);
+  useEffect(() => setRagCommentDraft(workspace.stageStatus?.rag_comment ?? ""), [workspace.stageStatus?.rag_comment]);
   const range = useMemo(() => buildTimelineRange(timelineRows), [timelineRows]);
   const timeline = useProgrammeTimeline({
     items: timelineRows,
@@ -79,8 +81,8 @@ export function TargetProgrammeStageWorkspace({
       </div>
       <div className="mb-5 grid gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-3">
         <label className="text-sm font-medium text-slate-700">Planning Status<select disabled={!stageEditable} value={workspace.ddtcDetail?.planning_status_code ?? ""} onChange={(event) => onPlanningStatus(event.target.value)} className="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">—</option><option>Not Lodged</option><option>Lodged</option><option>Granted</option></select></label>
-        <label className="text-sm font-medium text-slate-700">RAG<select disabled={!stageEditable} value={workspace.stageStatus.rag_code ?? ""} onChange={(event) => onStatusPatch({ ragCode: event.target.value })} className="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">—</option><option>R</option><option>A</option><option>G</option></select></label>
-        <label className="text-sm font-medium text-slate-700">RAG Comment<textarea disabled={!stageEditable} defaultValue={workspace.stageStatus.rag_comment ?? ""} key={workspace.stageStatus.updated_at.toISOString()} onBlur={(event) => onStatusPatch({ ragComment: event.target.value })} rows={2} className="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm" /></label>
+        <label className="text-sm font-medium text-slate-700">RAG<select disabled={!stageEditable} value={workspace.stageStatus?.rag_code ?? ""} onChange={(event) => onStatusPatch({ ragCode: event.target.value })} className="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">—</option><option>R</option><option>A</option><option>G</option></select></label>
+        <label className="text-sm font-medium text-slate-700">RAG Comment<textarea disabled={!stageEditable} value={ragCommentDraft} onChange={(event) => setRagCommentDraft(event.target.value)} onBlur={() => onStatusPatch({ ragComment: ragCommentDraft })} rows={2} className="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm" /></label>
       </div>
       {error ? <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div> : null}
       <div className="overflow-x-auto rounded-3xl border border-slate-200"><div className="min-w-[1050px]">

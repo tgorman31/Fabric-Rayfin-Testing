@@ -94,7 +94,7 @@ export type ProjectProgrammeClientState = {
 export type TargetProgrammeStageWorkspace = {
   stage: TargetStageState;
   rows: TargetProgrammeStageRow[];
-  stageStatus: TargetStageStatusRecord;
+  stageStatus?: TargetStageStatusRecord;
   ddtcDetail?: TargetDdtcDetailRecord;
 };
 
@@ -113,6 +113,10 @@ const DDTC_DETAIL_FIELDS = [
 const ACTIVE_PROJECT_FIELDS = ["guid", "effective_to"] as const;
 const PROJECT_SUMMARY_FIELDS = ["project_guid", "reporting_stage_code"] as const;
 const ACTIVE_EFFECTIVE_TO = "2099-12-31";
+
+export function shouldInitializeImplementedTarget(effectiveTo: Date | undefined): boolean {
+  return dateOnlyKey(effectiveTo) === ACTIVE_EFFECTIVE_TO;
+}
 
 type CurrentUser = { id: string; email: string };
 type ProjectProgrammeContext = { projectGuid: string; reportingStage: string };
@@ -310,7 +314,6 @@ export function projectTargetProgrammeStageWorkspace(
     };
   });
   const stageStatus = state.stageStatuses.find((status) => status.stage_code === stageCode);
-  if (!stageStatus) throw new Error(`Target stage status is not loaded: ${stageCode}`);
   return {
     stage,
     rows: projectTargetProgrammeRows(projectionInputs),
@@ -369,15 +372,20 @@ async function listTargetStageStatuses(projectGuid: string): Promise<TargetStage
     .execute();
 }
 
-export async function getOrEnsureTargetDdtcDetail(projectGuid: string): Promise<TargetDdtcDetailRecord> {
-  const client = getRayfinClient().data.project_target_ddtc_detail;
-  const existing = await client.select(DDTC_DETAIL_FIELDS)
+async function getExistingTargetDdtcDetail(projectGuid: string): Promise<TargetDdtcDetailRecord | undefined> {
+  const existing = await getRayfinClient().data.project_target_ddtc_detail
+    .select(DDTC_DETAIL_FIELDS)
     .where({ project_guid: { eq: projectGuid } })
     .first(-1)
     .execute();
-  const existingRecord = selectSingleLogicalRecord(existing, `DDTC detail for ${projectGuid}`);
+  return selectSingleLogicalRecord(existing, `DDTC detail for ${projectGuid}`) ?? undefined;
+}
+
+export async function getOrEnsureTargetDdtcDetail(projectGuid: string): Promise<TargetDdtcDetailRecord> {
+  const existingRecord = await getExistingTargetDdtcDetail(projectGuid);
   if (existingRecord) return existingRecord;
 
+  const client = getRayfinClient().data.project_target_ddtc_detail;
   const user = getCurrentUser();
   const now = new Date();
   const id = crypto.randomUUID();
@@ -405,21 +413,31 @@ export async function updateTargetDdtcDetail(
 
 export async function loadProjectProgrammeClientState(
   projectGuid: string,
+  options: { initializeImplementedTarget?: boolean } = {},
 ): Promise<ProjectProgrammeClientState> {
   await ensureCanonicalReportingProgramme(projectGuid);
   const definitions = await listActiveProgrammeDefinitions();
-  const operationalTargetDefinitions = definitions.filter(isImplementedTargetOperationalDefinition);
-  await Promise.all(operationalTargetDefinitions.map((definition) =>
-    ensureProjectProgrammeRecord(projectGuid, definition.guid),
-  ));
+  const initializeImplementedTarget = options.initializeImplementedTarget ?? true;
+  const operationalTargetDefinitions = initializeImplementedTarget
+    ? definitions.filter(isImplementedTargetOperationalDefinition)
+    : [];
+  if (initializeImplementedTarget) {
+    await Promise.all(operationalTargetDefinitions.map((definition) =>
+      ensureProjectProgrammeRecord(projectGuid, definition.guid),
+    ));
+  }
   const [records, summaryMembers, dependencies, reportingMappings, ddtcDetail] = await Promise.all([
     listProjectProgrammeRecords(projectGuid),
     listActiveSummaryMembers(),
     listActiveDependencyDefinitions(),
     listActiveReportingMappings(),
-    getOrEnsureTargetDdtcDetail(projectGuid),
+    initializeImplementedTarget
+      ? getOrEnsureTargetDdtcDetail(projectGuid)
+      : getExistingTargetDdtcDetail(projectGuid),
   ]);
-  const ddtcStatus = await ensureStageStatus(projectGuid, "ddtc");
+  const ddtcStatus = initializeImplementedTarget
+    ? await ensureStageStatus(projectGuid, "ddtc")
+    : undefined;
   const stageStatuses = await listTargetStageStatuses(projectGuid);
   return {
     definitions,
@@ -427,9 +445,9 @@ export async function loadProjectProgrammeClientState(
     summaryMembers,
     dependencies,
     reportingMappings,
-    stageStatuses: stageStatuses.some((status) => status.guid === ddtcStatus.guid)
-      ? stageStatuses
-      : [...stageStatuses, ddtcStatus],
+    stageStatuses: ddtcStatus && !stageStatuses.some((status) => status.guid === ddtcStatus.guid)
+      ? [...stageStatuses, ddtcStatus]
+      : stageStatuses,
     ddtcDetail,
   };
 }

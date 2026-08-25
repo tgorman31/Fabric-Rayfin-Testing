@@ -11,6 +11,7 @@ import { updateProjectProgrammeDates } from "./programmeService";
 import {
   loadProjectProgrammeClientState,
   projectReportingProgrammeRows,
+  shouldInitializeImplementedTarget,
   type ProjectProgrammeClientState,
 } from "./targetProgrammeService";
 import { getRayfinClient, isLocalBackend } from "./rayfinClient";
@@ -541,7 +542,9 @@ export async function getProjectIndexWorkspace(
       .where({ project_guid: { eq: project.guid } })
       .first(-1)
       .execute(),
-    loadProjectProgrammeClientState(project.guid),
+    loadProjectProgrammeClientState(project.guid, {
+      initializeImplementedTarget: shouldInitializeImplementedTarget(project.effective_to),
+    }),
   ]);
   const reportingRows = projectReportingProgrammeRows(programme);
 
