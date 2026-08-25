@@ -42,6 +42,20 @@ describe("project programme working-copy projections", () => {
     expect(projectTargetProgrammeStageWorkspace(state({ stageStatuses: [] }), "Planning", "planning").stageStatus).toBeUndefined();
   });
 
+  it("keeps Planning and DDTC attributes available when programme rows are empty", () => {
+    const planningStatus = { ...status, stage_code: "planning" };
+    const planningDetail = { id: "planning-detail", guid: "planning-detail", project_guid: "project", advancing_gateway4_code: "Yes", planning_granted_code: "No", partial_advance_g4_name: "Gateway", partial_advance_g4_homes: 10, created_at: date("2026-01-01"), created_by_user_id: "u", created_by_user_email: "u@test", updated_at: date("2026-01-01"), updated_by_user_id: "u", updated_by_user_email: "u@test" };
+    const planning = projectTargetProgrammeStageWorkspace(state({ definitions: [], records: [], stageStatuses: [planningStatus] as never[], planningDetail: planningDetail as never }), "Planning", "planning");
+    const ddtcDetail = { id: "ddtc-detail", guid: "ddtc-detail", project_guid: "project", planning_status_code: "Granted", created_at: date("2026-01-01"), created_by_user_id: "u", created_by_user_email: "u@test", updated_at: date("2026-01-01"), updated_by_user_id: "u", updated_by_user_email: "u@test" };
+    const ddtc = projectTargetProgrammeStageWorkspace(state({ definitions: [], records: [], ddtcDetail: ddtcDetail as never }), "Detailed Design / Tender / Contract", "ddtc");
+    expect(planning.rows).toHaveLength(0);
+    expect(planning.stageStatus).toBe(planningStatus);
+    expect(planning.planningDetail).toBe(planningDetail);
+    expect(ddtc.rows).toHaveLength(0);
+    expect(ddtc.stageStatus).toBe(status);
+    expect(ddtc.ddtcDetail).toBe(ddtcDetail);
+  });
+
   it("initializes only active projects and tolerates missing historical DDTC metadata", () => {
     expect(shouldInitializeImplementedTarget(date("2099-12-31"))).toBe(true);
     expect(shouldInitializeImplementedTarget(date("2026-01-01"))).toBe(false);

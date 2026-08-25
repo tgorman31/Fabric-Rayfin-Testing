@@ -71,10 +71,6 @@ export function TargetProgrammeStageWorkspace({
     },
   });
 
-  if (workspace.rows.length === 0) {
-    return <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-8 text-sm text-slate-600">No active {stage.label} programme definitions are configured.</div>;
-  }
-
   const stageEditable = isTargetStageEditable(stage, projectIsActive);
   const leftGrid = "minmax(250px, 1fr) 150px 150px";
   return (
@@ -95,10 +91,16 @@ export function TargetProgrammeStageWorkspace({
         <label className="text-sm font-medium text-slate-700">RAG Comment<textarea disabled={!stageEditable} value={ragCommentDraft} onChange={(event) => setRagCommentDraft(event.target.value)} onBlur={() => onStatusPatch(stage.code, { ragComment: ragCommentDraft })} rows={2} className="mt-2 block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm" /></label>
       </div>
       {error ? <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div> : null}
-      <div className="overflow-x-auto rounded-3xl border border-slate-200"><div className="min-w-[1050px]">
-        <div className="grid border-b border-slate-200 bg-slate-50" style={{ gridTemplateColumns: `${leftGrid} 1fr` }}><div className="grid items-center px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500" style={{ gridTemplateColumns: leftGrid }}><span>Item</span><span>Start</span><span>End</span></div><ProgrammeTimelineHeader range={range} scale={timeline.timelineScale} dayWidth={timeline.timelineDayWidth} /></div>
-        {timelineRows.map((row) => { const placement = getTimelinePlacement(row, range, timeline.timelineDayWidth); const theme = themes[row.rowType]; return <div key={row.id} className="grid border-b border-slate-100 last:border-b-0" style={{ gridTemplateColumns: `${leftGrid} 1fr` }}><div className="grid items-center gap-2 px-4 py-3 text-sm" style={{ gridTemplateColumns: leftGrid }}><div><div className="font-medium text-slate-800">{row.rowLabel}</div><div className="text-xs text-slate-400">{row.itemCode} · {row.rowType}</div></div>{row.rowType === "milestone" || row.rowType === "reporting_reference" ? <span className="text-slate-400">{row.startDate || "—"}</span> : <input type="date" value={row.startDate} disabled={!row.isStartEditable} onChange={(event) => onDatePatch(stage.code, row.definitionGuid, { target_start: event.target.value })} className="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs disabled:bg-slate-100 disabled:text-slate-400" />}<input type="date" value={row.endDate} disabled={!row.isEndEditable} onChange={(event) => onDatePatch(stage.code, row.definitionGuid, { target_end: event.target.value })} className="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs disabled:bg-slate-100 disabled:text-slate-400" /></div><ProgrammeTimelineRow item={row} range={range} scale={timeline.timelineScale} dayWidth={timeline.timelineDayWidth} placement={placement} theme={theme} onResizeStart={timeline.beginResize} onMoveStart={timeline.beginMove} /></div>; })}
-      </div></div>
+      {workspace.rows.length === 0 ? (
+        <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-8 text-sm text-slate-600">
+          No active {stage.label} programme definitions are configured.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-3xl border border-slate-200"><div className="min-w-[1050px]">
+          <div className="grid border-b border-slate-200 bg-slate-50" style={{ gridTemplateColumns: `${leftGrid} 1fr` }}><div className="grid items-center px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500" style={{ gridTemplateColumns: leftGrid }}><span>Item</span><span>Start</span><span>End</span></div><ProgrammeTimelineHeader range={range} scale={timeline.timelineScale} dayWidth={timeline.timelineDayWidth} /></div>
+          {timelineRows.map((row) => { const placement = getTimelinePlacement(row, range, timeline.timelineDayWidth); const theme = themes[row.rowType]; return <div key={row.id} className="grid border-b border-slate-100 last:border-b-0" style={{ gridTemplateColumns: `${leftGrid} 1fr` }}><div className="grid items-center gap-2 px-4 py-3 text-sm" style={{ gridTemplateColumns: leftGrid }}><div><div className="font-medium text-slate-800">{row.rowLabel}</div><div className="text-xs text-slate-400">{row.itemCode} · {row.rowType}</div></div>{row.rowType === "milestone" || row.rowType === "reporting_reference" ? <span className="text-slate-400">{row.startDate || "—"}</span> : <input type="date" value={row.startDate} disabled={!row.isStartEditable} onChange={(event) => onDatePatch(stage.code, row.definitionGuid, { target_start: event.target.value })} className="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs disabled:bg-slate-100 disabled:text-slate-400" />}<input type="date" value={row.endDate} disabled={!row.isEndEditable} onChange={(event) => onDatePatch(stage.code, row.definitionGuid, { target_end: event.target.value })} className="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs disabled:bg-slate-100 disabled:text-slate-400" /></div><ProgrammeTimelineRow item={row} range={range} scale={timeline.timelineScale} dayWidth={timeline.timelineDayWidth} placement={placement} theme={theme} onResizeStart={timeline.beginResize} onMoveStart={timeline.beginMove} /></div>; })}
+        </div></div>
+      )}
     </section>
   );
 }
