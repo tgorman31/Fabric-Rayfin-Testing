@@ -1,0 +1,51 @@
+# Project documentation
+
+This is the audience-oriented entry point for the Fabric Rayfin Project Index application. The Markdown in this repository is explanatory documentation; the canonical requirements and decisions remain the three root Markdown files.
+
+## Choose where to start
+
+### Business or product stakeholder
+
+Start with [`SPEC.md`](../SPEC.md) for the agreed product shape, then read [How the application works](getting-started/how-the-application-works.md) for a plain-English explanation. The [architecture overview](architecture/architecture-overview.md) explains what is current and what remains planned.
+
+### Application administrator
+
+Read [How the application works](getting-started/how-the-application-works.md), then the [codebase tour](getting-started/codebase-tour.md) section on Programme Admin. The current Admin page maintains programme definitions, summary memberships, dependencies and Reporting-to-Target mappings. A detailed Programme Admin user manual is **Planned documentation**.
+
+### Developer new to this project
+
+Read [How the application works](getting-started/how-the-application-works.md), follow the [codebase tour](getting-started/codebase-tour.md), and keep the [React/TypeScript guide](development/react-typescript-for-this-project.md) open while reading source. Then review the [architecture overview](architecture/architecture-overview.md).
+
+### IT or security reviewer
+
+Start with the [security overview](security/security-overview.md), then compare it with the [architecture overview](architecture/architecture-overview.md), [`SPEC.md`](../SPEC.md), and [`IMPLEMENTATION-PLAN.md`](../IMPLEMENTATION-PLAN.md). This is an initial evidence-based review, not a certification.
+
+### Support or troubleshooting reader
+
+Start with [How the application works](getting-started/how-the-application-works.md), then use the [codebase tour](getting-started/codebase-tour.md) to locate routes, services, tests and configuration. Check the current `package.json` scripts in the [README](../README.md) for local commands.
+
+## Source-of-truth hierarchy
+
+| Question | Authoritative source |
+|---|---|
+| Product and business requirements | [`SPEC.md`](../SPEC.md) |
+| Engineering roadmap and architecture constraints | [`IMPLEMENTATION-PLAN.md`](../IMPLEMENTATION-PLAN.md) |
+| Confirmed decisions and unresolved questions | [`SPEC-QUESTIONNAIRE.md`](../SPEC-QUESTIONNAIRE.md) |
+| Explanatory and support material | This `/docs` directory |
+| Implementation work and delivery status | GitHub Issues and pull requests |
+
+When current code differs from a planned document, documentation should say **Current implementation** and **Planned direction** rather than silently merging them.
+
+## Planned documentation
+
+The following are intentionally not created as empty files: detailed Programme Admin user manual, data model reference, deployment standard operating procedure, incident-response runbook, backup/recovery procedure, full threat model, and architecture decision records.
+
+A future Help/Documentation surface may render a curated subset of these Markdown files read-only inside the application. If that happens, Git and the version-controlled Markdown remain authoritative.
+
+## Related documents
+
+- [Architecture overview](architecture/architecture-overview.md)
+- [Security overview](security/security-overview.md)
+- [How the application works](getting-started/how-the-application-works.md)
+- [Codebase tour](getting-started/codebase-tour.md)
+- [React and TypeScript for this project](development/react-typescript-for-this-project.md)
